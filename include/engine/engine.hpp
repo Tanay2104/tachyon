@@ -1,6 +1,8 @@
 #ifndef ENGINE_HPP
 #define ENGINE_HPP
 
+#include <vector>
+
 #include "containers/lock_queue.hpp"
 #include "orderbook.hpp"
 #include "types.hpp"
@@ -8,10 +10,20 @@
 class Engine {
  private:
   threadsafe::stl_queue<ClientRequest>& event_queue;
-  threadsafe::stl_queue<Trade>& trades_queue;
 
+  // NOTE: we should clear the following queues later.
+  threadsafe::stl_queue<Trade>& trades_queue;
+  threadsafe::stl_queue<ExecutionReport>& execution_reports;
+  std::vector<ClientRequest> processed_events;
   OrderBook& orderbook;
 
+  // Helper functions for logging.
+  void logSelfTrade(ClientRequest incoming);
+  void logExecutionReport(ClientRequest incoming);  // For logging new orders
+  void logExecutionReport(
+      std::set<ClientRequest>::iterator);  // For cancelling orders.
+  void logExecutionReport(ClientRequest resting, ClientRequest incoming,
+                          Quantity trade_quantity);  // For trades.
   // Helper functions for various types of events.
 
   void handle_BID_GTC_LIMIT(ClientRequest incoming);
@@ -29,9 +41,12 @@ class Engine {
   void handle_ASK_IOC_MARKET(ClientRequest incoming);
 
  public:
-  Engine(threadsafe::stl_queue<ClientRequest>& ev_q, OrderBook& orderbook,
-         threadsafe::stl_queue<Trade>& trades_queue);
+  Engine(threadsafe::stl_queue<ClientRequest>& ev_q,
+         threadsafe::stl_queue<Trade>& trades_queue,
+         threadsafe::stl_queue<ExecutionReport>& exec_report,
+         OrderBook& orderbook);
   void handleEvents();  // runs on seperate thread.
+  ~Engine();
 };
 
 #endif

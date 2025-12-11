@@ -1,4 +1,10 @@
+#include <atomic>
+#include <chrono>
+#include <csignal>
+#include <cstdlib>
+#include <fstream>
 #include <thread>
+#include <vector>
 
 #include "containers/lock_queue.hpp"
 #include "engine/client.hpp"
@@ -7,34 +13,140 @@
 #include "engine/orderbook.hpp"
 #include "engine/types.hpp"
 
-OrderId order_id;
+std::atomic<bool> keep_running(true);
+std::atomic<bool> start_exchange(false);
+void printTrades(threadsafe::stl_queue<Trade>& trades_queue) {
+  Trade trade;
+  while (keep_running.load()) {
+    if (trades_queue.try_pop(trade)) {
+      std::cout << "Trade price: " << trade.price << std::endl;
+      std::cout << "Trade quantity: " << trade.quantity << std::endl;
+      std::cout << "Trade Maker: " << trade.maker_order_id << std::endl;
+      std::cout << "Trade Taker: " << trade.taker_order_id << std::endl;
+      std::cout << "Trade Time: " << trade.time_stamp << std::endl;
+      // std::cout << "Trade Aggressor: " << trade.aggressor_side << std::endl;
+      std::cout << "---" << std::endl;
+    }
+  }
+}
+
+void signal_handler(int /*unused*/) {
+  keep_running.store(false);
+  std::cout << "Exchange has closed\n";
+}
+
 auto main() -> int {
+  // The main entry point of our simulation.
+
+  // Signal handler for Ctrl + C
+  std::signal(SIGINT, signal_handler);
+
+  // Initilialing classed and data structures.
   threadsafe::stl_queue<ClientRequest> event_queue;
   threadsafe::stl_queue<Trade> trades_queue;
+  threadsafe::stl_queue<ExecutionReport> execution_report;
   OrderBook order_book;
 
-  GateWay gateway(event_queue);
-  Engine engine(event_queue, order_book, trades_queue);
+  GateWay gateway(event_queue, execution_report);
+  Engine engine(event_queue, trades_queue, execution_report, order_book);
 
-  Client foo(0, gateway, trades_queue);
-  // Client bar(1, gateway, trades_queue);
+  int num_client_threads = 4;
+  std::vector<Client> clients;
+  std::vector<std::thread> client_orders;
+  clients.reserve(num_client_threads);
+  client_orders.reserve(num_client_threads);
+  for (int i = 1; i <= num_client_threads; i++) {
+    clients.emplace_back(i, gateway, trades_queue);
+    client_orders.emplace_back(&Client::run, &clients.back());
+  }
   // Let's just add two clients for now.
   // NOTE: currently facilities for starting and stopping are not given.
   // Currently relying on process termination to kill all threads.
 
-  // TODO: add more and dynamic clients.
+  std::thread engine_event_handler(&Engine::handleEvents, &engine);
 
-  std::thread foo_place_order(&Client::generateAndPlaceOrders, &foo);
-  // std::thread bar_place_order(&Client::generateAndPlaceOrders, &bar);
+  // Exchange started!
+  start_exchange.store(true, std::memory_order_release);
+  std::cout << "Exchange has opened\n";
+  auto start = std::chrono::steady_clock::now();
 
-  std::thread engine_event_handler(&Engine::handleEvents, engine);
-  // std::thread foo_read_reports(&Client::readReports, &foo);  // Currently just empty.
-  // std::thread bar_read_reports(&Client::readReports, &bar);  // Currently
-  // just empty.
+  // For rough debugging only!
+  // std::thread print_trades(printTrades, std::ref(trades_queue));
 
-  // std::thread foo_read_trades(&Client::readReports, &foo);
-  // std::thread bar_read_trades(&Client::readReports, &bar);
-  // Lots of threads!
-  foo_place_order.join();
+  for (auto& client_order : client_orders) {
+    client_order.join();  // Joining the clients.
+  }
   engine_event_handler.join();
+  // print_trades.join();
+  auto end = std::chrono::steady_clock::now();
+  std::cout << "Exchange ran for "
+            << std::chrono::duration_cast<std::chrono::milliseconds>(end -
+                                                                     start)
+                   .count()
+            << "ms\n";
+
+  std::ofstream file;
+  // Writing trades.
+  file.open("processed_trades.txt", std::ios::out);
+  file << "Processed Trades\n";
+  file << trades_queue.size() << " Trades Processed\n";
+  Trade trade;
+  while (trades_queue.try_pop(trade)) {
+    file << "MAKER: " << trade.maker_order_id
+         << " TAKER: " << trade.taker_order_id << " " << trade.quantity << " @ "
+         << trade.price << " TIMESTAMP-" << trade.time_stamp << "\n";
+  }
+  file.close();
+  // Writing all execution reports.
+  file.open("all_execution_reports.txt", std::ios::out);
+  file << "Execution Reports\n";
+  file << execution_report.size() << " Execution Reports\n";
+  ExecutionReport report;
+  while (execution_report.try_pop(report)) {
+    file << "CLIENT " << report.client_id << " "
+         << "ORDER ID " << report.order_id << " "
+         << "PRICE " << report.price << " "
+         << "LAST QUANTITY " << report.last_quantity << " "
+         << "REMAINING QUANTITY " << report.remaining_quantity << " "
+         << (report.side == Side::BID ? "BUY " : "SELL ") << "EXEC TYPE ";
+    switch (report.type) {
+      case ExecType::NEW:
+        file << "NEW ";
+        break;
+      case ExecType::CANCELED:
+        file << "CANCELED ";
+        break;
+      case ExecType::REJECTED:
+        file << "REJECTED - ";
+        switch (report.reason) {
+          case RejectReason::NONE:
+            file << "NONE ";
+            break;
+          case RejectReason::ORDER_NOT_FOUND:
+            file << "ORDER_NOT_FOUND ";
+            break;
+          case RejectReason::PRICE_INVALID:
+            file << "PRICE_INVALID ";
+            break;
+          case RejectReason::QUANTITY_INVALID:
+            file << "QUANTITY_INVALID ";
+            break;
+          case RejectReason::MARKET_CLOSED:
+            file << "MARKET_CLOSED ";
+            break;
+          case RejectReason::SELF_TRADE:
+            file << "SELF_TRADE ";
+            break;
+        }
+        break;
+      case ExecType::TRADE:
+        file << "TRADE ";
+        break;
+      case ExecType::EXPIRED:
+        file << "EXPIRED ";
+        break;
+    }
+    file << "\n";
+  }
+  file.close();
 }

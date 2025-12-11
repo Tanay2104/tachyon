@@ -7,7 +7,7 @@ using ClientId = uint32_t;
 using Price = uint64_t;      // Precision upto four decimal points supported.
                              // For example, $12.9224 is represented as 129224.
 using Quantity = uint32_t;   // Larger quantity may be needed, let's see later.
-using TimeStamp = uint64_t;  // Time in microseconds since start of trading day.
+using TimeStamp = uint64_t;  // Time in nanoseconds since start of trading day.
 
 enum class RequestType : uint8_t { New, Cancel };
 enum class Side : uint8_t {
@@ -68,7 +68,8 @@ enum class RejectReason : uint8_t {
   ORDER_NOT_FOUND = 1,
   PRICE_INVALID = 2,
   QUANTITY_INVALID = 3,
-  MARKET_CLOSED = 4
+  MARKET_CLOSED = 4,
+  SELF_TRADE = 5,
 };
 
 // Execution report sent to the client regarding the order.

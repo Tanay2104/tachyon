@@ -42,7 +42,7 @@ add_library(core_engine
           src/gateway.cpp
           # PUT src FILES HERE
 )
-
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 # Building the main executable
 add_executable(app
               src/main.cpp)

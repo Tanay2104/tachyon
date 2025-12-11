@@ -6,7 +6,9 @@
 #include <cstdint>
 #include <cstring>
 #include <deque>
+#include <iostream>
 #include <mutex>
+#include <ostream>
 
 namespace threadsafe {
 template <typename T>
@@ -133,6 +135,7 @@ class stl_queue {
   }
   size_t size() {
     std::lock_guard<std::mutex> lk(mut);
+   if (data_queue.size() % 100 == 0) std::cout << "queue size: " << data_queue.size() << std::endl;
     return data_queue.size();
   }
 };

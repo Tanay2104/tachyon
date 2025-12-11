@@ -8,10 +8,10 @@
 class OrderBook {
  private:
   struct bids_cmp {
-    auto operator()(const ClientRequest& order_a, const ClientRequest& order_b)
-       const -> bool {
+    auto operator()(const ClientRequest& order_a,
+                    const ClientRequest& order_b) const -> bool {
       if (order_a.new_order.price == order_b.new_order.price) {
-        return order_a.new_order.quantity > order_b.new_order.quantity;
+        return order_a.time_stamp < order_b.time_stamp;
       }
       return (order_a.new_order.price >
               order_b.new_order.price);  // Big with higher price comes first.
@@ -19,10 +19,10 @@ class OrderBook {
   };
 
   struct asks_cmp {
-    auto operator()(const ClientRequest& order_a, const ClientRequest& order_b)
-       const -> bool {
+    auto operator()(const ClientRequest& order_a,
+                    const ClientRequest& order_b) const -> bool {
       if (order_a.new_order.price == order_b.new_order.price) {
-        return order_a.new_order.quantity > order_b.new_order.quantity;
+        return order_a.time_stamp < order_b.time_stamp;
       }
       return (order_a.new_order.price <
               order_b.new_order.price);  // Big with higher price comes first.
