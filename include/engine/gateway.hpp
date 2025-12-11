@@ -9,13 +9,14 @@
 class Client;  // NOTE: do not forget to include client in cpp file.
 class GateWay {
  private:
-  std::unordered_map<ClientId, Client*> a;
   threadsafe::stl_queue<ClientRequest>& event_queue;
   threadsafe::stl_queue<ExecutionReport>& execution_reports;
+  std::unordered_map<ClientId, Client*> clients;
 
  public:
   GateWay(threadsafe::stl_queue<ClientRequest>& event_queue,
           threadsafe::stl_queue<ExecutionReport>& exec_reports);
+  void addClient(ClientId cid, Client* cref);
   void addOrder(const Order& order, ClientId cid);
   void cancelOrder(OrderId order_id, ClientId client_id);
   void dispatcher();  // Sends the execution reports to the individual clients.

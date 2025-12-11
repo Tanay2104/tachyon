@@ -1,10 +1,15 @@
 #include "engine/gateway.hpp"
 
+#include <atomic>
 #include <chrono>
+#include <thread>
 
 #include "containers/lock_queue.hpp"
 #include "engine/client.hpp"
 #include "engine/types.hpp"
+
+extern std::atomic<bool> keep_running;
+extern std::atomic<bool> start_exchange;
 GateWay::GateWay(threadsafe::stl_queue<ClientRequest>& event_queue,
                  threadsafe::stl_queue<ExecutionReport>& exec_report)
     : event_queue(event_queue), execution_reports(exec_report) {}
@@ -33,4 +38,17 @@ void GateWay::cancelOrder(OrderId order_id, ClientId cid) {
   event_queue.push(client_request);
 }
 
-void GateWay::dispatcher() {}
+void GateWay::dispatcher() {
+  while (!start_exchange.load(std::memory_order_acquire)) {
+    std::this_thread::yield();
+  }
+  ExecutionReport report;
+  while (keep_running.load(std::memory_order_relaxed)) {
+    if (execution_reports.try_pop(report)) {
+      // Sending the execution reports to the clients.
+      clients.at(report.client_id)->addReport(report);
+    }
+  }
+}
+
+void GateWay::addClient(ClientId cid, Client* cref) { clients[cid] = cref; }

@@ -26,7 +26,7 @@ Engine::Engine(threadsafe::stl_queue<ClientRequest>& ev_q,
 
 Engine::~Engine() {
   std::ofstream processed_requests_file;
-  processed_requests_file.open("processed_events.txt", std::ios::out);
+  processed_requests_file.open("logs/processed_events.txt", std::ios::out);
   processed_requests_file << "Processed Events by Engine\n";
   processed_requests_file << processed_events.size() << " Events Processed\n";
   for (ClientRequest event : processed_events) {

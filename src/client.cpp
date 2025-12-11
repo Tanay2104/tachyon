@@ -1,6 +1,8 @@
 #include "engine/client.hpp"
 
 #include <cstdint>
+#include <format>
+#include <fstream>
 #include <random>
 
 #include "containers/lock_queue.hpp"
@@ -14,10 +16,67 @@ std::random_device Client::rand_device;
 std::mt19937 Client::gen(Client::rand_device());
 std::uniform_int_distribution<int> Client::distrib(-5000, 5000);
 std::uniform_int_distribution<int> Client::distrib_bool(0, 1);
+
 Client::Client(ClientId my_id, GateWay& gtway,
                threadsafe::stl_queue<Trade>& trades_queue)
     : my_id(my_id), gateway(gtway), trades_queue(trades_queue) {
   this->local_order_id = 1;  // Otherwise cancellaiton one can give problems.
+}
+
+Client::~Client() {
+  std::ofstream file;
+  std::string filename =
+      std::format("logs/execution_reports_client_{}.txt", my_id);
+  file.open(filename, std::ios::out);
+  file << "Execution Reports for Client " << my_id << "\n";
+  file << reports.size() << " Execution Reports\n";
+  for (auto report : reports) {
+    file << "CLIENT " << report.client_id << " "
+         << "ORDER ID " << report.order_id << " "
+         << "PRICE " << report.price << " "
+         << "LAST QUANTITY " << report.last_quantity << " "
+         << "REMAINING QUANTITY " << report.remaining_quantity << " "
+         << (report.side == Side::BID ? "BUY " : "SELL ") << "EXEC TYPE ";
+    switch (report.type) {
+      case ExecType::NEW:
+        file << "NEW ";
+        break;
+      case ExecType::CANCELED:
+        file << "CANCELED ";
+        break;
+      case ExecType::REJECTED:
+        file << "REJECTED - ";
+        switch (report.reason) {
+          case RejectReason::NONE:
+            file << "NONE ";
+            break;
+          case RejectReason::ORDER_NOT_FOUND:
+            file << "ORDER_NOT_FOUND ";
+            break;
+          case RejectReason::PRICE_INVALID:
+            file << "PRICE_INVALID ";
+            break;
+          case RejectReason::QUANTITY_INVALID:
+            file << "QUANTITY_INVALID ";
+            break;
+          case RejectReason::MARKET_CLOSED:
+            file << "MARKET_CLOSED ";
+            break;
+          case RejectReason::SELF_TRADE:
+            file << "SELF_TRADE ";
+            break;
+        }
+        break;
+      case ExecType::TRADE:
+        file << "TRADE ";
+        break;
+      case ExecType::EXPIRED:
+        file << "EXPIRED ";
+        break;
+    }
+    file << "\n";
+  }
+  file.close();
 }
 
 // I understand this is a very bad method for order generation. But I just want

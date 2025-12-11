@@ -36,6 +36,7 @@ class Client {
  public:
   Client(ClientId my_id, GateWay& gtway,
          threadsafe::stl_queue<Trade>& trades_queue);  // Constructor
+  ~Client();
   void run();  // Runs continuosly in a loop, calls
                // generateOrder and placeOrder
   void addReport(

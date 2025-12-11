@@ -58,13 +58,14 @@ auto main() -> int {
   for (int i = 1; i <= num_client_threads; i++) {
     clients.emplace_back(i, gateway, trades_queue);
     client_orders.emplace_back(&Client::run, &clients.back());
+    gateway.addClient(i, &clients.back());
   }
   // Let's just add two clients for now.
   // NOTE: currently facilities for starting and stopping are not given.
   // Currently relying on process termination to kill all threads.
 
   std::thread engine_event_handler(&Engine::handleEvents, &engine);
-
+  std::thread execution_report_dispatcher(&GateWay::dispatcher, &gateway);
   // Exchange started!
   start_exchange.store(true, std::memory_order_release);
   std::cout << "Exchange has opened\n";
@@ -77,6 +78,7 @@ auto main() -> int {
     client_order.join();  // Joining the clients.
   }
   engine_event_handler.join();
+  execution_report_dispatcher.join();
   // print_trades.join();
   auto end = std::chrono::steady_clock::now();
   std::cout << "Exchange ran for "
@@ -87,7 +89,7 @@ auto main() -> int {
 
   std::ofstream file;
   // Writing trades.
-  file.open("processed_trades.txt", std::ios::out);
+  file.open("logs/processed_trades.txt", std::ios::out);
   file << "Processed Trades\n";
   file << trades_queue.size() << " Trades Processed\n";
   Trade trade;
@@ -98,55 +100,4 @@ auto main() -> int {
   }
   file.close();
   // Writing all execution reports.
-  file.open("all_execution_reports.txt", std::ios::out);
-  file << "Execution Reports\n";
-  file << execution_report.size() << " Execution Reports\n";
-  ExecutionReport report;
-  while (execution_report.try_pop(report)) {
-    file << "CLIENT " << report.client_id << " "
-         << "ORDER ID " << report.order_id << " "
-         << "PRICE " << report.price << " "
-         << "LAST QUANTITY " << report.last_quantity << " "
-         << "REMAINING QUANTITY " << report.remaining_quantity << " "
-         << (report.side == Side::BID ? "BUY " : "SELL ") << "EXEC TYPE ";
-    switch (report.type) {
-      case ExecType::NEW:
-        file << "NEW ";
-        break;
-      case ExecType::CANCELED:
-        file << "CANCELED ";
-        break;
-      case ExecType::REJECTED:
-        file << "REJECTED - ";
-        switch (report.reason) {
-          case RejectReason::NONE:
-            file << "NONE ";
-            break;
-          case RejectReason::ORDER_NOT_FOUND:
-            file << "ORDER_NOT_FOUND ";
-            break;
-          case RejectReason::PRICE_INVALID:
-            file << "PRICE_INVALID ";
-            break;
-          case RejectReason::QUANTITY_INVALID:
-            file << "QUANTITY_INVALID ";
-            break;
-          case RejectReason::MARKET_CLOSED:
-            file << "MARKET_CLOSED ";
-            break;
-          case RejectReason::SELF_TRADE:
-            file << "SELF_TRADE ";
-            break;
-        }
-        break;
-      case ExecType::TRADE:
-        file << "TRADE ";
-        break;
-      case ExecType::EXPIRED:
-        file << "EXPIRED ";
-        break;
-    }
-    file << "\n";
-  }
-  file.close();
 }
