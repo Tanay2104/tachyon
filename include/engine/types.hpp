@@ -71,11 +71,10 @@ enum class RejectReason : uint8_t {
   MARKET_CLOSED = 4
 };
 
-// Execution report sent to the client regarding the order..
+// Execution report sent to the client regarding the order.
 struct ExecutionReport {
   ClientId client_id;
   OrderId order_id;
-  TimeStamp time_stamp;
   Price price;                  // Last price filled or 0
   Quantity last_quantity;       // Quantity filled in this event.
   Quantity remaining_quantity;  // Remaining quanity if any.
@@ -83,8 +82,9 @@ struct ExecutionReport {
   RejectReason reason;          // If rejected, why?
   Side side;  // Context, though shouldn't the client know themselves?
 };
-// Size = 4 + 4 + 8 + 8 + 4 + 4 + 3 = 35 bytes. Oh no!!!
-// TODO: Find a work-around or shrink to fit in <= 32 bytes.
+// Size = 4 + 4 +  8 + 4 + 4 + 3 = 27 bytes.
+// NOTE: We are not putting timestamp here so it that it fits in ~32 bytes.
+// Anyways client can pull timestamp from public trades queue if they need it.
 
 // The internal data generated when a match happens.
 struct Trade {

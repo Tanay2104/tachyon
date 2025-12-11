@@ -9,7 +9,10 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON) # Generates files for clangd
 
 # Strict warnings
 add_compile_options(-Wall -Wextra -Wpedantic -Werror)
-
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    add_compile_options(-fsanitize=thread -g -O0)
+    add_link_options(-fsanitize=thread)
+endif()
 # Include directories
 include_directories(include)
 
@@ -20,6 +23,7 @@ include(FetchContent)
 FetchContent_Declare(
   googletest
   URL https://github.com/google/googletest/archive/refs/heads/main.zip
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 FetchContent_MakeAvailable(googletest)
 
@@ -27,16 +31,21 @@ FetchContent_MakeAvailable(googletest)
 FetchContent_Declare(
   googlebenchmark
   URL https://github.com/google/benchmark/archive/refs/heads/main.zip
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 FetchContent_MakeAvailable(googlebenchmark)
 
 # Building the engine
-add_libary(core_engine
+add_library(core_engine
+          src/client.cpp
+          src/engine.cpp
+          src/gateway.cpp
           # PUT src FILES HERE
 )
 
 # Building the main executable
-add_executable(app, src/main.cpp)
+add_executable(app
+              src/main.cpp)
 target_link_libraries(app PRIVATE core_engine)
 
 # Build tests
