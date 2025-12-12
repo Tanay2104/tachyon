@@ -2,6 +2,8 @@
 #define TYPES_HPP
 #include <cstdint>
 
+#include "containers/lock_queue.hpp"
+
 using OrderId = uint32_t;
 using ClientId = uint32_t;
 using Price = uint64_t;      // Precision upto four decimal points supported.
@@ -9,6 +11,8 @@ using Price = uint64_t;      // Precision upto four decimal points supported.
 using Quantity = uint32_t;   // Larger quantity may be needed, let's see later.
 using TimeStamp = uint64_t;  // Time in nanoseconds since start of trading day.
 
+template <typename T>
+using queue = threadsafe::stl_queue<T>;
 enum class RequestType : uint8_t { New, Cancel };
 enum class Side : uint8_t {
   BID,  // Highest price a buyer is willing to pay

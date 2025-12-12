@@ -8,7 +8,7 @@
 #include "types.hpp"
 
 class Engine {
- private:
+ public:
   threadsafe::stl_queue<ClientRequest>& event_queue;
 
   // NOTE: we should clear the following queues later.

@@ -50,7 +50,9 @@ target_link_libraries(app PRIVATE core_engine)
 
 # Build tests
 enable_testing()
-add_executable(unit_tests tests/ #TEST FILE 
+add_executable(unit_tests 
+              tests/testengine.cpp
+              #TEST FILES
 )
 
 target_link_libraries(unit_tests PRIVATE core_engine gtest_main)
