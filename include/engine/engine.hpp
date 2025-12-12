@@ -11,7 +11,7 @@
 class Engine {
  private:
   static const uint16_t MAX_PROCESSED_EVENTS_SIZE = 10000;
-  static const uint16_t MAX_TRADE_BUFFER_SIZE = 1000;
+  static const uint16_t MAX_TRADE_BUFFER_SIZE = 100;
 
   threadsafe::stl_queue<ClientRequest>& event_queue;
   // NOTE: we should clear the following queues later.

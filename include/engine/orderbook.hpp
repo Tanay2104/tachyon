@@ -43,6 +43,12 @@ class OrderBook {
   void match(ClientRequest& incoming,
              std::vector<std::pair<Trade, ClientRequest>>& trades);
   auto cancelOrder(OrderId order_id, ClientRequest& to_cancel) -> bool;
+  size_t size_asks() {
+    return asks.size();
+  }
+  size_t size_bids() {
+    return bids.size();
+  }
 };
 
 #endif

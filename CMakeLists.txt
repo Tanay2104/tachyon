@@ -8,7 +8,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON) # Generates files for clangd
 
 # Strict warnings
-add_compile_options(-Wall -Wextra -Wpedantic -Werror)
+add_compile_options(-Wall -Wextra -Wpedantic)
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     add_compile_options(-fsanitize=thread -g -O0)
     add_link_options(-fsanitize=thread)
@@ -53,14 +53,17 @@ target_link_libraries(app PRIVATE core_engine)
 # Build tests
 enable_testing()
 add_executable(unit_tests 
-             tests/testengine.cpp
+             tests/testorderbook.cpp
               #TEST FILES
 )
 
 target_link_libraries(unit_tests PRIVATE core_engine gtest_main)
 
 # Build benchmarks
-add_executable(benchmarks benchmarks # BENCHMARK FILE
+add_executable(benchmarks
+            benchmarks/benchmark_main.cpp
+            benchmarks/benchmark_lock_queues.cpp
+            # BENCHMARK FILE
 )
 target_link_libraries(benchmarks PRIVATE core_engine benchmark::benchmark)
 
