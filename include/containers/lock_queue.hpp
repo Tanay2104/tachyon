@@ -19,7 +19,7 @@ class lock_queue {
   size_t head;
   size_t tail;
   static const uint8_t MULTIPLIER = 2;
-  static const uint8_t INIT_SIZE = 4;
+  static const uint8_t INIT_SIZE = 128;
 
   mutable std::mutex mut;  // the mutex must be mutable
   std::condition_variable cv;

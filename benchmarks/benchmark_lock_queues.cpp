@@ -1,6 +1,5 @@
 #include <benchmark/benchmark.h>
 
-#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <iostream>
@@ -199,7 +198,9 @@ static void BM_LockQueue_Contention(benchmark::State& state) {
 
   // 5. Cleanup
   thread_exit.store(true, std::memory_order_release);
-  if (consumer.joinable()) consumer.join();
+  if (consumer.joinable()) {
+    consumer.join();
+  }
 
   // 6. Report Items (Push + Pop count)
   state.SetItemsProcessed(state.iterations() * ITEMS * 2);
@@ -209,4 +210,4 @@ static void BM_LockQueue_Contention(benchmark::State& state) {
 // Range: Test with 1000, and 100000 items per batch
 BENCHMARK(BM_LockQueue_Contention)->Arg(1000)->Arg(100000)->UseRealTime();
 
-// BENCHMARK_MAIN();
+BENCHMARK_MAIN();

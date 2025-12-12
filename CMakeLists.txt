@@ -52,18 +52,23 @@ target_link_libraries(app PRIVATE core_engine)
 
 # Build tests
 enable_testing()
-add_executable(unit_tests 
+add_executable(testorderbook 
              tests/testorderbook.cpp
               #TEST FILES
 )
 
-target_link_libraries(unit_tests PRIVATE core_engine gtest_main)
+add_executable(testcircularbuffer
+                tests/testcircularbuffer.cpp)
 
+target_link_libraries(testorderbook PRIVATE core_engine gtest_main)
+target_link_libraries(testcircularbuffer PRIVATE gtest_main)
 # Build benchmarks
-add_executable(benchmarks
+add_executable(benchmarks_orderbook
             benchmarks/benchmark_main.cpp
-            benchmarks/benchmark_lock_queues.cpp
             # BENCHMARK FILE
-)
-target_link_libraries(benchmarks PRIVATE core_engine benchmark::benchmark)
-
+            )
+add_executable(benchmark_lock_queue
+            benchmarks/benchmark_lock_queues.cpp
+          )
+target_link_libraries(benchmarks_orderbook PRIVATE core_engine benchmark::benchmark)
+target_link_libraries(benchmark_lock_queue PRIVATE benchmark::benchmark)

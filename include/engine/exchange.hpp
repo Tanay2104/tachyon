@@ -4,11 +4,12 @@
 #include <atomic>
 #include <chrono>
 #include <csignal>
+#include <cstdint>
 #include <cstdlib>
+#include <deque>
 #include <fstream>
 #include <thread>
 #include <vector>
-#include <deque>
 
 #include "containers/lock_queue.hpp"
 #include "engine/client.hpp"
@@ -23,7 +24,7 @@ class Exchange {
   threadsafe::stl_queue<ClientRequest> event_queue;
   threadsafe::stl_queue<Trade> trades_queue;
   threadsafe::stl_queue<ExecutionReport> execution_report;
-
+  static const uint32_t MAX_TRADES_QUEUE_SIZE = 10000;
   // Key components.
   OrderBook orderbook;
   GateWay gateway;

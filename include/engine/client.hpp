@@ -33,6 +33,8 @@ class Client {
                                         // gateway.placeOrder()
   auto generateOrder()
       -> Order;  // Generates order based on a strategy. TBD later.
+  void writeExecutionReport();
+
  public:
   Client(ClientId my_id, GateWay& gtway,
          threadsafe::stl_queue<Trade>& trades_queue);  // Constructor

@@ -1,6 +1,9 @@
 #include "engine/exchange.hpp"
 
+#include <malloc.h>
+
 #include <chrono>
+#include <thread>
 
 #include "engine/gateway.hpp"
 
@@ -39,13 +42,18 @@ void Exchange::writeTrades() {
   // Writing trades.
   file.open("logs/processed_trades.txt", std::ios::app);
   Trade trade;
-  while (
-      trades_queue.try_pop(trade)) {  // Note: trades qeueu will automatically
-                                      // be cleared by this mechanism.
-    file << "MAKER: " << trade.maker_order_id
-         << " TAKER: " << trade.taker_order_id << " " << trade.quantity << " @ "
-         << trade.price << " TIMESTAMP-" << trade.time_stamp << "\n";
+  for (uint32_t i = 0; i < MAX_TRADES_QUEUE_SIZE; i++) {
+    if (trades_queue.try_pop(  // This should succeed.
+            trade)) {          // Note: trades qeueue will automatically
+                               // be cleared by this mechanism.
+      file << "MAKER: " << trade.maker_order_id
+           << " TAKER: " << trade.taker_order_id << " " << trade.quantity
+           << " @ " << trade.price << " TIMESTAMP-" << trade.time_stamp << "\n";
+    } else {
+      std::this_thread::yield();
+    }
   }
+
   file.close();
 }
 
@@ -54,7 +62,12 @@ void Exchange::writeTradesContinuous() {
     std::this_thread::yield();
   }
   while (keep_running.load(std::memory_order_relaxed)) {
-    writeTrades();
+    if (trades_queue.size() == MAX_TRADES_QUEUE_SIZE) {
+      writeTrades();
+      malloc_trim(0);
+    } else {
+      std::this_thread::yield();
+    }
   }
 }
 

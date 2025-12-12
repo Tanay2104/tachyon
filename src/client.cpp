@@ -21,15 +21,65 @@ Client::Client(ClientId my_id, GateWay& gtway,
                threadsafe::stl_queue<Trade>& trades_queue)
     : my_id(my_id), gateway(gtway), trades_queue(trades_queue) {
   this->local_order_id = 1;  // Otherwise cancellaiton one can give problems.
-}
-
-Client::~Client() {
   std::ofstream file;
   std::string filename =
       std::format("logs/execution_reports_client_{}.txt", my_id);
   file.open(filename, std::ios::out);
   file << "Execution Reports for Client " << my_id << "\n";
-  file << reports.size() << " Execution Reports\n";
+}
+
+Client::~Client() { writeExecutionReport(); }
+
+// I understand this is a very bad method for order generation. But I just want
+// to test now.
+// TODO: add cancellation facility.
+auto Client::generateOrder() -> Order {
+  Order order;
+  order.order_id = (my_id << 16 | local_order_id++);
+  order.price = (100 * 1000) + distrib(gen);
+  order.quantity = 50000 + distrib(gen);
+  int r_int_side = distrib_bool(gen);
+  // int r_int_order_type = distrib_bool(gen);
+  int r_int_tif = distrib_bool(gen);
+  order.side = static_cast<Side>(r_int_side);
+  order.order_type = OrderType::LIMIT;
+  order.tif = static_cast<TimeInForce>(r_int_tif);
+
+  return order;
+}
+
+void Client::run() {
+  while (!start_exchange.load(std::memory_order_acquire)) {
+    // TODO: learn what memory_order_acquire actually i
+    std::this_thread::yield();
+  }
+  while (keep_running.load(std::memory_order_relaxed)) {
+    std::this_thread::sleep_for(std::chrono::microseconds(20));
+    gateway.addOrder(generateOrder(), my_id);
+    if (local_order_id % 20 == 0) {
+      OrderId to_delete = local_order_id - (rand() % 20);
+      gateway.cancelOrder((my_id << 16 | to_delete), my_id);
+    }
+    if (reports.size() >= 10000) {
+      writeExecutionReport();  // Clients duty to write execution reports.
+    }
+  }
+}
+
+void Client::readTrades() {
+  while (true) {
+  }
+}
+
+void Client::addReport(ExecutionReport exec_report) {
+  reports.push_back(exec_report);
+}
+
+void Client::writeExecutionReport() {
+  std::ofstream file;
+  std::string filename =
+      std::format("logs/execution_reports_client_{}.txt", my_id);
+  file.open(filename, std::ios::app);
   for (auto report : reports) {
     file << "CLIENT " << report.client_id << " "
          << "ORDER ID " << report.order_id << " "
@@ -77,46 +127,5 @@ Client::~Client() {
     file << "\n";
   }
   file.close();
-}
-
-// I understand this is a very bad method for order generation. But I just want
-// to test now.
-// TODO: add cancellation facility.
-auto Client::generateOrder() -> Order {
-  Order order;
-  order.order_id = (my_id << 16 | local_order_id++);
-  order.price = (100 * 1000) + distrib(gen);
-  order.quantity = 50000 + distrib(gen);
-  int r_int_side = distrib_bool(gen);
-  // int r_int_order_type = distrib_bool(gen);
-  // int r_int_tif = distrib_bool(gen);
-  order.side = static_cast<Side>(r_int_side);
-  order.order_type = OrderType::LIMIT;
-  order.tif = TimeInForce::GTC;
-
-  return order;
-}
-
-void Client::run() {
-  while (!start_exchange.load(std::memory_order_acquire)) {
-    // TODO: learn what memory_order_acquire actually i
-    std::this_thread::yield();
-  }
-  while (keep_running.load(std::memory_order_relaxed)) {
-    std::this_thread::sleep_for(std::chrono::microseconds(500));
-    gateway.addOrder(generateOrder(), my_id);
-    if (local_order_id % 50 == 0) {
-      OrderId to_delete = local_order_id - (rand() % 50);
-      gateway.cancelOrder((my_id << 16 | to_delete), my_id);
-    }
-  }
-}
-
-void Client::readTrades() {
-  while (true) {
-  }
-}
-
-void Client::addReport(ExecutionReport exec_report) {
-  reports.push_back(exec_report);
+  reports.clear();
 }

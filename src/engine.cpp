@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <fstream>
 #include <iostream>
 #include <thread>
@@ -34,7 +35,9 @@ void Engine::writeLogs() {
   std::ofstream processed_requests_file;
   processed_requests_file.open("logs/processed_events.txt", std::ios::app);
   ClientRequest event;
-  for (int i = 0; i < MAX_PROCESSED_EVENTS_SIZE; i++) { // At least MAX PROCESSED events must be there.
+  uint32_t before_size = processed_events.size();
+  for (uint32_t i = 0; i < before_size;
+       i++) {  // At least MAX PROCESSED events must be there.
     processed_events.try_pop(event);
     processed_requests_file << "Client " << event.client_id << ": ";
     if (event.type == RequestType::New) {
@@ -60,7 +63,7 @@ void Engine::writeLogsContinuous() {
     std::this_thread::yield();
   }
   while (keep_running.load(std::memory_order_relaxed)) {
-    if (processed_events.size() == MAX_PROCESSED_EVENTS_SIZE) {
+    if (processed_events.size() >= MAX_PROCESSED_EVENTS_SIZE) {
       writeLogs();
     }
   }
@@ -139,9 +142,12 @@ void Engine::logSelfTrade(ClientRequest incoming) {
 }
 
 void Engine::handle_GTC_LIMIT(ClientRequest incoming) {
-  orderbook.add(incoming);
   trades_buffer.clear();
-  orderbook.match(incoming, trades_buffer);
+  orderbook.match(incoming,
+                  trades_buffer);  // incoming must be passed by reference.
+  if (incoming.new_order.quantity > 0) {
+    orderbook.add(incoming);  // Some quantity was left so we add to order book.
+  }
   for (auto [trade, resting] : trades_buffer) {
     trades_queue.push(trade);  // Maybe we don't need it. Let's see.
     logTrade(resting, incoming, trade.quantity);
@@ -153,47 +159,35 @@ void Engine::handle_GTC_MARKET(ClientRequest incoming) {
 }
 
 void Engine::handle_IOC_LIMIT(ClientRequest incoming) {
-  incoming.order_id_to_cancel++;
+  trades_buffer.clear();
+  orderbook.match(incoming, trades_buffer);
+  // NOTE: since this is IOC order, we do NOT pass add it irrespective of
+  // remaining quantity.
+  for (auto [trade, resting] : trades_buffer) {
+    trades_queue.push(trade);  // Maybe we don't need it. Let's see.
+    logTrade(resting, incoming, trade.quantity);
+  }
 }
 
 void Engine::handle_IOC_MARKET(ClientRequest incoming) {
   incoming.order_id_to_cancel++;
 }
 
-/* // For debugging ONLY!!!
-void printEvent(ClientRequest incoming) {
-  std::cout << "Incoming client id: " << incoming.client_id << std::endl;
-  if (incoming.type == RequestType::New) {
-    std::cout << "Incoming request type: " << "NEW" << std::endl;
-    std::cout << "Incoming order id: " << incoming.new_order.order_id
-              << std::endl;
-    std::cout << "Incoming price: " << incoming.new_order.price << std::endl;
-    std::cout << "Incoming quantity: " << incoming.new_order.quantity
-              << std::endl;
-    std::cout << "Incoming type: " << "LIMIT" << std::endl;
-    std::cout << "Incoming side: "
-              << (incoming.new_order.side == Side::ASK ? "ASK" : "BID")
-              << std::endl;
-    std::cout << "Incoming TIF: " << "GTC" << std::endl;
-    std::cout << "---" << std::endl;
-  } else {
-    std::cout << "Incoming request type: " << "CANCEL" << std::endl;
-    std::cout << "Incoming order id: " << incoming.order_id_to_cancel
-              << std::endl;
-  }
-} */
 void Engine::handleEvents() {
   while (!start_exchange.load(std::memory_order_acquire)) {
     std::this_thread::yield();
   }
   ClientRequest incoming;
+
+  uint64_t processed_events_count = 0;
   // NOTE: Only GTC LIMIT handlers exist now.
   while (keep_running.load(std::memory_order_relaxed)) {
     if (event_queue.try_pop(incoming)) {
       // printEvent(incoming); // For debugging only!
       processed_events.push(incoming);
-      if (processed_events.size() % 1000 == 0) {
-        std::cout << processed_events.size() << " events processed.\n";
+      processed_events_count++;
+      if (processed_events_count % 10000 == 0) {
+        std::cout << processed_events_count << " events processed.\n";
       }
       if (incoming.type == RequestType::New) {
         // For now, we assume correct price and quantity. So every order will be
