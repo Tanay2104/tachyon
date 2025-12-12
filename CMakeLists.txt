@@ -40,6 +40,7 @@ add_library(core_engine
           src/client.cpp
           src/engine.cpp
           src/gateway.cpp
+          src/orderbook.cpp
           # PUT src FILES HERE
 )
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
@@ -51,7 +52,7 @@ target_link_libraries(app PRIVATE core_engine)
 # Build tests
 enable_testing()
 add_executable(unit_tests 
-              tests/testengine.cpp
+             tests/testengine.cpp
               #TEST FILES
 )
 

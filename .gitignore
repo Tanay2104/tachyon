@@ -2,4 +2,5 @@
 cmake-build-debug/
 temp.txt
 build/
+logs/
 .cache

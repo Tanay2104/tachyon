@@ -2,6 +2,7 @@
 #define ORDER_BOOK_HPP
 
 #include <set>
+#include <vector>
 
 #include "engine/types.hpp"
 
@@ -29,9 +30,19 @@ class OrderBook {
     }
   };
 
- public:
   std::set<ClientRequest, bids_cmp> bids;  // People buying stuff.
   std::set<ClientRequest, asks_cmp> asks;  // People selling stuff.
+
+  template <typename BookType, typename CompareFunc>
+  void matchImplementation(
+      ClientRequest& incoming, BookType& book, CompareFunc priceCrosses,
+      std::vector<std::pair<Trade, ClientRequest>>& trades);
+
+ public:
+  void add(ClientRequest& incoming);
+  void match(ClientRequest& incoming,
+             std::vector<std::pair<Trade, ClientRequest>>& trades);
+  auto cancelOrder(OrderId order_id, ClientRequest& to_cancel) -> bool;
 };
 
 #endif

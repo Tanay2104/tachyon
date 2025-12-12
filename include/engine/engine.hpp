@@ -8,37 +8,32 @@
 #include "types.hpp"
 
 class Engine {
- public:
+ private:
   threadsafe::stl_queue<ClientRequest>& event_queue;
 
   // NOTE: we should clear the following queues later.
   threadsafe::stl_queue<Trade>& trades_queue;
   threadsafe::stl_queue<ExecutionReport>& execution_reports;
   std::vector<ClientRequest> processed_events;
+  std::vector<std::pair<Trade, ClientRequest>> trades_buffer;
   OrderBook& orderbook;
 
   // Helper functions for logging.
-  void logSelfTrade(ClientRequest incoming);
-  void logExecutionReport(ClientRequest incoming);  // For logging new orders
-  void logExecutionReport(
-      std::set<ClientRequest>::iterator);  // For cancelling orders.
-  void logExecutionReport(ClientRequest resting, ClientRequest incoming,
-                          Quantity trade_quantity);  // For trades.
-  // Helper functions for various types of events.
+  void logNotFound(ClientRequest incoming);
+  void logSelfTrade(ClientRequest incoming);    // User tried self trade
+  void logNewOrder(ClientRequest incoming);     // New order logged
+  void logCancelOrder(ClientRequest incoming);  // Cancellation successful.
+  void logTrade(
+      ClientRequest resting, ClientRequest incoming,
+      Quantity trade_quantity);  // Trade has happened, send report to both.
 
-  void handle_BID_GTC_LIMIT(ClientRequest incoming);
-  // BID GTC MARKET not offered. The below function is for handling the
+  //  Helper functions to handle proper routing to matching function.
+  void handle_GTC_LIMIT(ClientRequest incoming);
+  // GTC MARKET not offered. The below function is for handling the
   // execution report only, not matching.
-
-  void handle_BID_GTC_MARKET(ClientRequest incoming);
-  void handle_BID_IOC_LIMIT(ClientRequest incoming);
-  void handle_BID_IOC_MARKET(ClientRequest incoming);
-  void handle_ASK_GTC_LIMIT(ClientRequest incoming);
-  // ASK GTC MARKET not offered. The below function is for handling the
-  // execution report only, not matching.
-  void handle_ASK_GTC_MARKET(ClientRequest incoming);
-  void handle_ASK_IOC_LIMIT(ClientRequest incoming);
-  void handle_ASK_IOC_MARKET(ClientRequest incoming);
+  void handle_GTC_MARKET(ClientRequest incoming);
+  void handle_IOC_LIMIT(ClientRequest incoming);
+  void handle_IOC_MARKET(ClientRequest incoming);
 
  public:
   Engine(threadsafe::stl_queue<ClientRequest>& ev_q,

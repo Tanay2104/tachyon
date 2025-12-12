@@ -22,6 +22,7 @@ Engine::Engine(threadsafe::stl_queue<ClientRequest>& ev_q,
       execution_reports(exec_report),
       orderbook(orderbook) {
   processed_events.reserve(100000);
+  trades_buffer.reserve(1000);
 }
 
 Engine::~Engine() {
@@ -51,18 +52,30 @@ Engine::~Engine() {
 
 // WARNING: Check for seg faults becase we ignore the boolean returned by insert
 // in map and only use it.
-void Engine::logExecutionReport(std::set<ClientRequest>::iterator order) {
+void Engine::logCancelOrder(ClientRequest incoming) {
   ExecutionReport exec_report;
-  exec_report.client_id = order->client_id;
-  exec_report.order_id = order->new_order.order_id;
-  exec_report.price = order->new_order.price;
+  exec_report.client_id = incoming.client_id;
+  exec_report.order_id = incoming.new_order.order_id;
+  exec_report.price = incoming.new_order.price;
   exec_report.last_quantity = 0;
-  exec_report.remaining_quantity = order->new_order.quantity;
+  exec_report.remaining_quantity = incoming.new_order.quantity;
   exec_report.type = ExecType::CANCELED;
-  exec_report.side = order->new_order.side;
+  exec_report.side = incoming.new_order.side;
   execution_reports.push(exec_report);
 }
-void Engine::logExecutionReport(ClientRequest incoming) {
+
+void Engine::logNotFound(ClientRequest incoming) {
+  ExecutionReport exec_report;
+  exec_report.client_id = incoming.client_id;
+  exec_report.order_id = incoming.order_id_to_cancel;
+  exec_report.price = 0;
+  exec_report.last_quantity = 0;
+  exec_report.remaining_quantity = 0;
+  exec_report.type = ExecType::REJECTED;
+  exec_report.reason = RejectReason::ORDER_NOT_FOUND;
+  execution_reports.push(exec_report);
+}
+void Engine::logNewOrder(ClientRequest incoming) {
   ExecutionReport exec_report;
   exec_report.client_id = incoming.client_id;
   exec_report.order_id = incoming.new_order.order_id;
@@ -74,8 +87,8 @@ void Engine::logExecutionReport(ClientRequest incoming) {
   execution_reports.push(exec_report);
 }
 
-void Engine::logExecutionReport(ClientRequest resting, ClientRequest incoming,
-                                Quantity trade_quantity) {
+void Engine::logTrade(ClientRequest resting, ClientRequest incoming,
+                      Quantity trade_quantity) {
   ExecutionReport exec_report;
 
   exec_report.client_id = incoming.client_id;
@@ -109,118 +122,30 @@ void Engine::logSelfTrade(ClientRequest incoming) {
 
   execution_reports.push(report);
 }
-void Engine::handle_BID_GTC_LIMIT(ClientRequest incoming) {
-  ClientRequest resting;
-  auto asks_it = orderbook.asks.begin();
-  while (incoming.new_order.quantity > 0 && asks_it != orderbook.asks.end() &&
-         asks_it->new_order.price <= incoming.new_order.price) {
-    resting = *asks_it;
-    if (resting.client_id == incoming.client_id) {
-      logSelfTrade(incoming);
-      ++asks_it;
-      continue;  // No trade possible between self. Issue execution report.
-    }
 
-    asks_it =
-        orderbook.asks.erase(asks_it);  // this points to the NEXT iterator.
-    Quantity trade_quantity =
-        std::min(resting.new_order.quantity, incoming.new_order.quantity);
-    // Decrease quantity from both.
-    resting.new_order.quantity -= trade_quantity;
-    incoming.new_order.quantity -= trade_quantity;
-    // Broadcasting trade data.
-    // TODO: Maybe add constructors if they look cleaner..
-    Trade new_trade;
-    new_trade.aggressor_side = Side::BID;
-    new_trade.quantity = trade_quantity;
-    new_trade.price = resting.new_order.price;
-    new_trade.maker_order_id = resting.new_order.order_id;
-    new_trade.taker_order_id = incoming.new_order.order_id;
-    new_trade.time_stamp =
-        std::chrono::duration_cast<std::chrono::nanoseconds>(
-            std::chrono::system_clock::now().time_since_epoch())
-            .count();
-    trades_queue.push(new_trade);
-
-    logExecutionReport(resting, incoming, trade_quantity);
-
-    if (resting.new_order.quantity > 0) {
-      asks_it = orderbook.asks.insert(resting)
-                    .first;  // if some quantity is left we should set it here.
-                             // However it doesnt matter actually because
-                             // incoming has zero remaining quantity.
-    }
-  }
-  if (incoming.new_order.quantity > 0) {
-    orderbook.bids.insert(incoming);
+void Engine::handle_GTC_LIMIT(ClientRequest incoming) {
+  orderbook.add(incoming);
+  trades_buffer.clear();
+  orderbook.match(incoming, trades_buffer);
+  for (auto [trade, resting] : trades_buffer) {
+    trades_queue.push(trade);  // Maybe we don't need it. Let's see.
+    logTrade(resting, incoming, trade.quantity);
   }
 }
 
-void Engine::handle_BID_GTC_MARKET(ClientRequest incoming) {
+void Engine::handle_GTC_MARKET(ClientRequest incoming) {
   incoming.order_id_to_cancel++;  // DUMMY
 }
 
-void Engine::handle_BID_IOC_LIMIT(ClientRequest incoming) {
+void Engine::handle_IOC_LIMIT(ClientRequest incoming) {
   incoming.order_id_to_cancel++;
 }
 
-void Engine::handle_BID_IOC_MARKET(ClientRequest incoming) {
-  incoming.order_id_to_cancel++;
-}
-void Engine::handle_ASK_GTC_LIMIT(ClientRequest incoming) {
-  ClientRequest resting;
-  auto bids_it = orderbook.bids.begin();
-  while (incoming.new_order.quantity > 0 && bids_it != orderbook.bids.end() &&
-         bids_it->new_order.price >= incoming.new_order.price) {
-    resting = *bids_it;
-    if (resting.client_id == incoming.client_id) {
-      logSelfTrade(incoming);
-      ++bids_it;
-      continue;  // No trade possible between self. Issue execution report.
-    }
-    bids_it = orderbook.bids.erase(bids_it);
-    Quantity trade_quantity =
-        std::min(resting.new_order.quantity, incoming.new_order.quantity);
-    // Decrease quantity from both.
-    resting.new_order.quantity -= trade_quantity;
-    incoming.new_order.quantity -= trade_quantity;
-    // Broadcasting trade data.
-    // TODO: broadcast Execution report als
-
-    Trade new_trade;
-    new_trade.aggressor_side = Side::ASK;
-    new_trade.quantity = trade_quantity;
-    new_trade.price =
-        resting.new_order
-            .price;  // NOTE: The resting order always sets the price.
-    new_trade.maker_order_id = resting.new_order.order_id;
-    new_trade.taker_order_id = incoming.new_order.order_id;
-    new_trade.time_stamp =
-        std::chrono::duration_cast<std::chrono::nanoseconds>(
-            std::chrono::system_clock::now().time_since_epoch())
-            .count();
-    trades_queue.push(new_trade);
-    logExecutionReport(resting, incoming, trade_quantity);
-    if (resting.new_order.quantity > 0) {
-      bids_it = orderbook.bids.insert(resting).first;
-    }
-  }
-  if (incoming.new_order.quantity > 0) {
-    orderbook.asks.insert(incoming);
-  }
-}
-
-void Engine::handle_ASK_GTC_MARKET(ClientRequest incoming) {
-  incoming.order_id_to_cancel++;  // DUMMY!
-}
-void Engine::handle_ASK_IOC_LIMIT(ClientRequest incoming) {
-  incoming.order_id_to_cancel++;
-}
-void Engine::handle_ASK_IOC_MARKET(ClientRequest incoming) {
+void Engine::handle_IOC_MARKET(ClientRequest incoming) {
   incoming.order_id_to_cancel++;
 }
 
-// For debugging ONLY!!!
+/* // For debugging ONLY!!!
 void printEvent(ClientRequest incoming) {
   std::cout << "Incoming client id: " << incoming.client_id << std::endl;
   if (incoming.type == RequestType::New) {
@@ -241,7 +166,7 @@ void printEvent(ClientRequest incoming) {
     std::cout << "Incoming order id: " << incoming.order_id_to_cancel
               << std::endl;
   }
-}
+} */
 void Engine::handleEvents() {
   while (!start_exchange.load(std::memory_order_acquire)) {
     std::this_thread::yield();
@@ -258,76 +183,27 @@ void Engine::handleEvents() {
       if (incoming.type == RequestType::New) {
         // For now, we assume correct price and quantity. So every order will be
         // accepted.
-        logExecutionReport(incoming);
-        if (incoming.new_order.side == Side::BID) {
-          if (incoming.new_order.tif == TimeInForce::GTC) {
-            if (incoming.new_order.order_type == OrderType::LIMIT) {
-              handle_BID_GTC_LIMIT(incoming);
-            } else if (incoming.new_order.order_type == OrderType::MARKET) {
-              // Invalid order type. Hanlde properly.
-              handle_BID_GTC_MARKET(incoming);
-            }
-          } else if (incoming.new_order.tif == TimeInForce::IOC) {
-            if (incoming.new_order.order_type == OrderType::LIMIT) {
-              handle_BID_IOC_LIMIT(incoming);
-            } else if (incoming.new_order.order_type == OrderType::MARKET) {
-              handle_BID_IOC_MARKET(incoming);
-            }
+        logNewOrder(incoming);
+        if (incoming.new_order.tif == TimeInForce::GTC) {
+          if (incoming.new_order.order_type == OrderType::LIMIT) {
+            handle_GTC_LIMIT(incoming);
+          } else if (incoming.new_order.order_type == OrderType::MARKET) {
+            // Invalid order type. Handle properly.
+            handle_GTC_MARKET(incoming);
           }
-        }
-
-        else if (incoming.new_order.side == Side::ASK) {
-          if (incoming.new_order.tif == TimeInForce::GTC) {
-            if (incoming.new_order.order_type == OrderType::LIMIT) {
-              handle_ASK_GTC_LIMIT(incoming);
-            } else if (incoming.new_order.order_type == OrderType::MARKET) {
-              // Invalid order type. Hanlde properly.
-              handle_ASK_GTC_MARKET(incoming);
-            }
-          } else if (incoming.new_order.tif == TimeInForce::IOC) {
-            if (incoming.new_order.order_type == OrderType::LIMIT) {
-              handle_ASK_IOC_LIMIT(incoming);
-            } else if (incoming.new_order.order_type == OrderType::MARKET) {
-              handle_ASK_IOC_MARKET(incoming);
-            }
+        } else if (incoming.new_order.tif == TimeInForce::IOC) {
+          if (incoming.new_order.order_type == OrderType::LIMIT) {
+            handle_IOC_LIMIT(incoming);
+          } else if (incoming.new_order.order_type == OrderType::MARKET) {
+            handle_IOC_MARKET(incoming);
           }
         }
       } else if (incoming.type == RequestType::Cancel) {
-        // First we find in bids, then asks, else give error or something.
-        OrderId to_cancel =
-            incoming.order_id_to_cancel;  // idk why the find if iterator gives
-                                          // errors on using dot.
-        auto cancel_iterator = std::ranges::find_if(
-            orderbook.asks, [to_cancel](const ClientRequest& clr) -> bool {
-              return (to_cancel == clr.new_order.order_id);
-            });
-
-        if (cancel_iterator != orderbook.asks.end()) {
-          // The order exists in the Asks map.
-          logExecutionReport(cancel_iterator);
-          orderbook.asks.erase(cancel_iterator);
-          // TODO: Add execution report and return.
+        ClientRequest to_cancel;
+        if (orderbook.cancelOrder(incoming.order_id_to_cancel, to_cancel)) {
+          logCancelOrder(to_cancel);
         } else {
-          // It doen't exist in asks.
-          cancel_iterator = std::ranges::find_if(
-              orderbook.bids, [to_cancel](const ClientRequest& clr) -> bool {
-                return (to_cancel == clr.new_order.order_id);
-              });
-          if (cancel_iterator != orderbook.bids.end()) {
-            // It was a bid order
-            logExecutionReport(cancel_iterator);
-            orderbook.bids.erase(cancel_iterator);
-          } else {
-            ExecutionReport exec_report;
-            exec_report.client_id = incoming.client_id;
-            exec_report.type = ExecType::REJECTED;
-            exec_report.price = 0;
-            exec_report.order_id = incoming.order_id_to_cancel;
-            exec_report.last_quantity = 0;
-            exec_report.remaining_quantity = 0;
-            exec_report.reason = RejectReason::ORDER_NOT_FOUND;
-            execution_reports.push(exec_report);
-          }
+          logNotFound(incoming);
         }
       }
     }
