@@ -21,16 +21,21 @@ Engine::Engine(threadsafe::stl_queue<ClientRequest>& ev_q,
       trades_queue(trades_queue),
       execution_reports(exec_report),
       orderbook(orderbook) {
-  processed_events.reserve(100000);
-  trades_buffer.reserve(1000);
+  trades_buffer.reserve(MAX_TRADE_BUFFER_SIZE);
+  std::ofstream processed_requests_file;
+  processed_requests_file.open("logs/processed_events.txt", std::ios ::out);
+  processed_requests_file << "Processed Events by Engine\n";
+  processed_requests_file.close();
 }
 
-Engine::~Engine() {
+Engine::~Engine() { writeLogs(); }
+
+void Engine::writeLogs() {
   std::ofstream processed_requests_file;
-  processed_requests_file.open("logs/processed_events.txt", std::ios::out);
-  processed_requests_file << "Processed Events by Engine\n";
-  processed_requests_file << processed_events.size() << " Events Processed\n";
-  for (ClientRequest event : processed_events) {
+  processed_requests_file.open("logs/processed_events.txt", std::ios::app);
+  ClientRequest event;
+  for (int i = 0; i < MAX_PROCESSED_EVENTS_SIZE; i++) { // At least MAX PROCESSED events must be there.
+    processed_events.try_pop(event);
     processed_requests_file << "Client " << event.client_id << ": ";
     if (event.type == RequestType::New) {
       processed_requests_file
@@ -50,6 +55,16 @@ Engine::~Engine() {
   processed_requests_file.close();
 }
 
+void Engine::writeLogsContinuous() {
+  while (!start_exchange.load(std::memory_order_acquire)) {
+    std::this_thread::yield();
+  }
+  while (keep_running.load(std::memory_order_relaxed)) {
+    if (processed_events.size() == MAX_PROCESSED_EVENTS_SIZE) {
+      writeLogs();
+    }
+  }
+}
 // WARNING: Check for seg faults becase we ignore the boolean returned by insert
 // in map and only use it.
 void Engine::logCancelOrder(ClientRequest incoming) {
@@ -176,7 +191,7 @@ void Engine::handleEvents() {
   while (keep_running.load(std::memory_order_relaxed)) {
     if (event_queue.try_pop(incoming)) {
       // printEvent(incoming); // For debugging only!
-      processed_events.push_back(incoming);
+      processed_events.push(incoming);
       if (processed_events.size() % 1000 == 0) {
         std::cout << processed_events.size() << " events processed.\n";
       }

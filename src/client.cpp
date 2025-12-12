@@ -103,7 +103,7 @@ void Client::run() {
     std::this_thread::yield();
   }
   while (keep_running.load(std::memory_order_relaxed)) {
-    std::this_thread::sleep_for(std::chrono::microseconds(2000));
+    std::this_thread::sleep_for(std::chrono::microseconds(500));
     gateway.addOrder(generateOrder(), my_id);
     if (local_order_id % 50 == 0) {
       OrderId to_delete = local_order_id - (rand() % 50);

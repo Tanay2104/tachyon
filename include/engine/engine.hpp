@@ -1,6 +1,7 @@
 #ifndef ENGINE_HPP
 #define ENGINE_HPP
 
+#include <cstdint>
 #include <vector>
 
 #include "containers/lock_queue.hpp"
@@ -9,12 +10,14 @@
 
 class Engine {
  private:
-  threadsafe::stl_queue<ClientRequest>& event_queue;
+  static const uint16_t MAX_PROCESSED_EVENTS_SIZE = 10000;
+  static const uint16_t MAX_TRADE_BUFFER_SIZE = 1000;
 
+  threadsafe::stl_queue<ClientRequest>& event_queue;
   // NOTE: we should clear the following queues later.
   threadsafe::stl_queue<Trade>& trades_queue;
   threadsafe::stl_queue<ExecutionReport>& execution_reports;
-  std::vector<ClientRequest> processed_events;
+  threadsafe::stl_queue<ClientRequest> processed_events;
   std::vector<std::pair<Trade, ClientRequest>> trades_buffer;
   OrderBook& orderbook;
 
@@ -35,12 +38,16 @@ class Engine {
   void handle_IOC_LIMIT(ClientRequest incoming);
   void handle_IOC_MARKET(ClientRequest incoming);
 
+  // Helper function for writing logs to disk.
+  void writeLogs();
+
  public:
   Engine(threadsafe::stl_queue<ClientRequest>& ev_q,
          threadsafe::stl_queue<Trade>& trades_queue,
          threadsafe::stl_queue<ExecutionReport>& exec_report,
          OrderBook& orderbook);
   void handleEvents();  // runs on seperate thread.
+  void writeLogsContinuous();
   ~Engine();
 };
 

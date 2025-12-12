@@ -41,6 +41,7 @@ add_library(core_engine
           src/engine.cpp
           src/gateway.cpp
           src/orderbook.cpp
+          src/exchange.cpp
           # PUT src FILES HERE
 )
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
