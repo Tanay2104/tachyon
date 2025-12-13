@@ -10,12 +10,17 @@
 #include <stdexcept>
 #include <type_traits>
 
+// Suppress warnings regarding this statement expression.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
+
 #define container_of(ptr, type, member)               \
   ({                                                  \
     const typeof(((type*)0)->member)* __mptr = (ptr); \
     (type*)((char*)__mptr - offsetof(type, member));  \
   })
 
+#pragma GCC diagnostic pop
 // Concept for checking existance of intr_node
 // TODO: learn concepts and requires properly
 template <typename T, typename MemberType>
@@ -157,6 +162,7 @@ class intrusive_list {
 
     IntrusiveListNode* node;
     explicit ListIterator(IntrusiveListNode* n) : node(n) {}
+    ListIterator() = default;  // default container for storing with STL.
     // allow convert from it to const it.
     template <bool WasConst, typename = std::enable_if_t<IsConst && !WasConst>>
     ListIterator(const ListIterator<WasConst>& other) : node(other.node) {}
@@ -218,12 +224,18 @@ class intrusive_list {
 
   // Some functions using iterators.
 
+  // remove by iterator. Return iterator for next element.
   auto remove(iterator it) -> iterator {
     iterator next_it = ++it;
     --it;
     remove(it.node);
     return next_it;
   }
+
+  /* // insert node into list at the position specified
+  void insert(iterator it, T data) {
+
+  } */
 };
 
 #endif

@@ -13,6 +13,7 @@
 
 #include "containers/lock_queue.hpp"
 #include "engine/client.hpp"
+#include "engine/constants.hpp"
 #include "engine/engine.hpp"
 #include "engine/gateway.hpp"
 #include "engine/orderbook.hpp"
@@ -24,7 +25,6 @@ class Exchange {
   threadsafe::stl_queue<ClientRequest> event_queue;
   threadsafe::stl_queue<Trade> trades_queue;
   threadsafe::stl_queue<ExecutionReport> execution_report;
-  static const uint32_t MAX_TRADES_QUEUE_SIZE = 10000;
   // Key components.
   OrderBook orderbook;
   GateWay gateway;
@@ -53,7 +53,7 @@ class Exchange {
   ~Exchange();
   void init();
   void stop();
-  void addClients(int num = 4);
+  void addClients(int num = NUM_DEFAULT_CLIENTS);
   void run();
 };
 

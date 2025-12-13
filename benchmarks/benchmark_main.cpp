@@ -11,7 +11,7 @@
 #include "containers/lock_queue.hpp"
 #include "engine/orderbook.hpp"
 #include "engine/types.hpp"
-
+#include "engine/constants.hpp"
 // ============================================================================
 // 1. Data Generation Helpers
 // ============================================================================
@@ -36,7 +36,7 @@ ClientRequest makeReq(OrderId oid, Side side, Price price, Quantity qty,
   if (type == RequestType::New) {
     req.new_order.order_id = oid;
     req.new_order.side = side;
-    req.new_order.price = price;
+    req.new_order.price = CLIENT_BASE_PRICE + CLIENT_PRICE_DISTRIB_MIN + price;
     req.new_order.quantity = qty;
     req.new_order.order_type = OrderType::LIMIT;
     req.new_order.tif = TimeInForce::GTC;

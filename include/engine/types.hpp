@@ -2,8 +2,8 @@
 #define TYPES_HPP
 #include <cstdint>
 
+#include "containers/intrusive_list.hpp"
 #include "containers/lock_queue.hpp"
-
 using OrderId = uint32_t;
 using ClientId = uint32_t;
 using Price = uint64_t;      // Precision upto four decimal points supported.
@@ -50,6 +50,7 @@ struct ClientRequest {
   RequestType type;              // 1 byte
   ClientId client_id;            // 4 bytes
   TimeStamp time_stamp;          // 8 bytes
+  IntrusiveListNode intr_node;   // 16 bytes!!!!
   union {                        // Union saves memory.
     Order new_order;             // 19 bytes
     OrderId order_id_to_cancel;  // 4 bytes
@@ -57,7 +58,8 @@ struct ClientRequest {
 };
 // The size of a union is size of largest element.
 // Hence the size of client request is 14 + 19 = 32 bytes.
-// Perfect two objects in a cache line without any space waste.
+// TODO: Wrong prev statement: Perfect two objects in a cache line without any
+// space waste.
 
 enum class ExecType : uint8_t {
   NEW = 0,       // Order accepted

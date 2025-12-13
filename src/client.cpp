@@ -6,6 +6,7 @@
 #include <random>
 
 #include "containers/lock_queue.hpp"
+#include "engine/constants.hpp"
 #include "engine/gateway.hpp"
 #include "engine/types.hpp"
 // NOTE: currently pricing true cost at 100. People randomly select any number
@@ -14,7 +15,8 @@ extern std::atomic<bool> keep_running;
 extern std::atomic<bool> start_exchange;
 std::random_device Client::rand_device;
 std::mt19937 Client::gen(Client::rand_device());
-std::uniform_int_distribution<int> Client::distrib(-5000, 5000);
+std::uniform_int_distribution<int> Client::distrib(CLIENT_PRICE_DISTRIB_MIN,
+                                                   CLIENT_PRICE_DISTRIB_MAX);
 std::uniform_int_distribution<int> Client::distrib_bool(0, 1);
 
 Client::Client(ClientId my_id, GateWay& gtway,
@@ -35,9 +37,9 @@ Client::~Client() { writeExecutionReport(); }
 // TODO: add cancellation facility.
 auto Client::generateOrder() -> Order {
   Order order;
-  order.order_id = (my_id << 16 | local_order_id++);
-  order.price = (100 * 1000) + distrib(gen);
-  order.quantity = 50000 + distrib(gen);
+  order.order_id = (my_id << LOCAL_ORDER_BITS | local_order_id++);
+  order.price = (CLIENT_BASE_PRICE) + distrib(gen);
+  order.quantity = CLIENT_BASE_QUANTITY + distrib(gen);
   int r_int_side = distrib_bool(gen);
   int r_int_order_type = distrib_bool(gen);
   int r_int_tif = distrib_bool(gen);
@@ -56,11 +58,11 @@ void Client::run() {
   while (keep_running.load(std::memory_order_relaxed)) {
     std::this_thread::sleep_for(std::chrono::microseconds(200));
     gateway.addOrder(generateOrder(), my_id);
-    if (local_order_id % 20 == 0) {
-      OrderId to_delete = local_order_id - (rand() % 20);
-      gateway.cancelOrder((my_id << 16 | to_delete), my_id);
+    if (local_order_id % (ORDER_CANCELLATION_FREQ) == 0) {
+      OrderId to_delete = local_order_id - (rand() % (ORDER_CANCELLATION_FREQ));
+      gateway.cancelOrder((my_id << (LOCAL_ORDER_BITS) | to_delete), my_id);
     }
-    if (reports.size() >= 10000) {
+    if (reports.size() >= MAX_EXECUTION_REPORTS_SIZE) {
       writeExecutionReport();  // Clients duty to write execution reports.
     }
   }
