@@ -1,6 +1,8 @@
 #include "engine/orderbook.hpp"
 
 #include <algorithm>
+#include <cstdint>
+#include <cstdlib>
 #include <new>
 #include <ranges>
 #include <vector>
@@ -14,15 +16,19 @@ void OrderBook::add(ClientRequest& incoming) {
       incoming.new_order.price - CLIENT_BASE_PRICE -
       (CLIENT_PRICE_DISTRIB_MIN);  // price_distrib_min is negative.
   // NOTE: we use an arena otheriwse objects are destroyed.
-  arena.push_back(incoming);
-  arena_idx[incoming.new_order.order_id] = arena.end() - 1;
+  // arena.push_back(incoming);
+  // arena_idx[incoming.new_order.order_id] = arena.end() - 1;
+  allocateSlot(incoming);
   if (incoming.new_order.side == Side::BID) {
-    bids[book_price].push_back(arena.back());
+    bids[book_price].push_back(
+        arena[arena_idx[incoming.new_order.order_id]].clr);
     intrusive_list<ClientRequest>::iterator it = bids[book_price].end();
     it--;
     list_idx[incoming.new_order.order_id] = {Side::BID, book_price, it};
   } else {
-    asks[book_price].push_back(arena.back());
+    asks[book_price].push_back(
+        arena[arena_idx[incoming.new_order.order_id]].clr);
+
     intrusive_list<ClientRequest>::iterator it = asks[book_price].end();
     it--;
     list_idx[incoming.new_order.order_id] = {Side::ASK, book_price, it};
@@ -53,33 +59,62 @@ auto OrderBook::cancelOrder(OrderId order_id, ClientRequest& to_cancel)
   if (it == bids[price].end()) {
     return false;
   }
-  else if (it == asks[price].end()) {
+  if (it == asks[price].end()) {
     return false;
   }
-  else if (side == Side::BID) {
+  if (side == Side::BID) {
     to_cancel = *it;
     bids[price].remove(it);
+    freeSlot(arena_idx[order_id]);  // Free a slot.
+    arena_idx.erase(order_id);      // Also erase it's map.
     return true;
-  } else if (side == Side::ASK) {
+  }
+  if (side == Side::ASK) {
     to_cancel = *it;
     asks[price].remove(it);
+    freeSlot(arena_idx[order_id]);  // Free a slot.
+    arena_idx.erase(order_id);      // Also erase it's map.
     return true;
   }
   return false;
 }
 
+auto OrderBook::allocateSlot(const ClientRequest& incoming) -> uint32_t {
+  uint32_t idx;
+  if (!free_list.empty()) {
+    // recycle an old block.
+    idx = free_list.back();
+    free_list.pop_back();
+  } else {
+    // create new slot.
+    idx = arena.size();
+    arena.emplace_back();
+  }
+  arena[idx].clr = incoming;
+  arena[idx].is_active = true;
+  arena_idx[incoming.new_order.order_id] = idx;
+
+  return idx;
+}
+
+void OrderBook::freeSlot(uint32_t idx) {
+  assert(arena[idx].is_active);
+  arena[idx].is_active = false;
+  free_list.push_back(idx);
+}
+
 // Hopefully this function is not called.
-size_t OrderBook::size_asks() {
+auto OrderBook::size_asks() -> size_t {
   size_t size = 0;
-  for (int i = 0; i < asks.size(); i++) {
+  for (size_t i = 0; i < asks.size(); i++) {
     size += asks[i].size();
     std::cout << size << std::endl;
   }
 }
 
-size_t OrderBook::size_bids() {
+auto OrderBook::size_bids() -> size_t {
   size_t size = 0;
-  for (int i = 0; i < bids.size(); i++) {
+  for (size_t i = 0; i < bids.size(); i++) {
     size += bids[i].size();
   }
 }

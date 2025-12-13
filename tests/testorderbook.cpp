@@ -158,6 +158,7 @@ TEST_F(OrderBookTest, TimePriority_Simple) {
 
 TEST_F(OrderBookTest, PartialFill_AggressorRemains) {
   // Sell 10 @ 100
+  std::cout << "meow\n";
   auto sell = makeReq(1, 101, Side::ASK, 100, 10);
   book.add(sell);
 
