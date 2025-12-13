@@ -60,15 +60,24 @@ add_executable(testorderbook
 add_executable(testcircularbuffer
                 tests/testcircularbuffer.cpp)
 
+add_executable(testintrusivelist
+              tests/testintrusivelist.cpp)
 target_link_libraries(testorderbook PRIVATE core_engine gtest_main)
 target_link_libraries(testcircularbuffer PRIVATE gtest_main)
+target_link_libraries(testintrusivelist PRIVATE gtest_main)
 # Build benchmarks
-add_executable(benchmarks_orderbook
+add_executable(benchmarkorderbook
             benchmarks/benchmark_main.cpp
             # BENCHMARK FILE
             )
-add_executable(benchmark_lock_queue
+add_executable(benchmarklockqueue
             benchmarks/benchmark_lock_queues.cpp
           )
-target_link_libraries(benchmarks_orderbook PRIVATE core_engine benchmark::benchmark)
-target_link_libraries(benchmark_lock_queue PRIVATE benchmark::benchmark)
+add_executable(benchmarkintrusivelist
+            benchmarks/benchmark_intrusive_list.cpp)
+
+
+target_link_libraries(benchmarkorderbook PRIVATE core_engine benchmark::benchmark)
+target_link_libraries(benchmarklockqueue PRIVATE benchmark::benchmark)
+target_link_libraries(benchmarkintrusivelist PRIVATE benchmark::benchmark)
+
