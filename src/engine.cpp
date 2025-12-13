@@ -84,7 +84,7 @@ void Engine::logCancelOrder(ClientRequest& incoming) {
   exec_report.side = incoming.new_order.side;
   execution_reports.push(exec_report);
 }
-void Engine::logInvalidOrder(ClientRequest & incoming) {
+void Engine::logInvalidOrder(ClientRequest& incoming) {
   ExecutionReport exec_report;
   exec_report.client_id = incoming.client_id;
   exec_report.order_id = incoming.new_order.order_id;
@@ -96,7 +96,7 @@ void Engine::logInvalidOrder(ClientRequest & incoming) {
   exec_report.side = incoming.new_order.side;
   execution_reports.push(exec_report);
 }
-void Engine::logNotFound(ClientRequest & incoming) {
+void Engine::logNotFound(ClientRequest& incoming) {
   ExecutionReport exec_report;
   exec_report.client_id = incoming.client_id;
   exec_report.order_id = incoming.order_id_to_cancel;
@@ -107,7 +107,7 @@ void Engine::logNotFound(ClientRequest & incoming) {
   exec_report.reason = RejectReason::ORDER_NOT_FOUND;
   execution_reports.push(exec_report);
 }
-void Engine::logNewOrder(ClientRequest & incoming) {
+void Engine::logNewOrder(ClientRequest& incoming) {
   ExecutionReport exec_report;
   exec_report.client_id = incoming.client_id;
   exec_report.order_id = incoming.new_order.order_id;
@@ -119,7 +119,7 @@ void Engine::logNewOrder(ClientRequest & incoming) {
   execution_reports.push(exec_report);
 }
 
-void Engine::logTrade(ClientRequest & resting, ClientRequest & incoming,
+void Engine::logTrade(ClientRequest& resting, ClientRequest& incoming,
                       Quantity trade_quantity) {
   ExecutionReport exec_report;
 
@@ -141,7 +141,7 @@ void Engine::logTrade(ClientRequest & resting, ClientRequest & incoming,
   exec_report.side = resting.new_order.side;
   execution_reports.push(exec_report);
 }
-void Engine::logSelfTrade(ClientRequest & incoming) {
+void Engine::logSelfTrade(ClientRequest& incoming) {
   ExecutionReport report;
   report.client_id = incoming.client_id;
   report.last_quantity = 0;
@@ -155,7 +155,7 @@ void Engine::logSelfTrade(ClientRequest & incoming) {
   execution_reports.push(report);
 }
 
-void Engine::handle_GTC_LIMIT(ClientRequest & incoming) {
+void Engine::handle_GTC_LIMIT(ClientRequest& incoming) {
   trades_buffer.clear();
   orderbook.match(incoming,
                   trades_buffer);  // incoming must be passed by reference.
@@ -168,11 +168,11 @@ void Engine::handle_GTC_LIMIT(ClientRequest & incoming) {
   }
 }
 
-void Engine::handle_GTC_MARKET(ClientRequest & incoming) {
+void Engine::handle_GTC_MARKET(ClientRequest& incoming) {
   logInvalidOrder(incoming);
 }
 
-void Engine::handle_IOC_LIMIT(ClientRequest & incoming) {
+void Engine::handle_IOC_LIMIT(ClientRequest& incoming) {
   trades_buffer.clear();
   orderbook.match(incoming, trades_buffer);
   // NOTE: since this is IOC order, we do NOT pass add it irrespective of
@@ -183,9 +183,11 @@ void Engine::handle_IOC_LIMIT(ClientRequest & incoming) {
   }
 }
 
-void Engine::handle_IOC_MARKET(ClientRequest & incoming) {
+void Engine::handle_IOC_MARKET(ClientRequest& incoming) {
   if (incoming.new_order.side == Side::ASK) {  // We set price to zero.
-    incoming.new_order.price = (CLIENT_BASE_PRICE) + (CLIENT_PRICE_DISTRIB_MIN); // price distrib min is -ve
+    incoming.new_order.price =
+        (CLIENT_BASE_PRICE) +
+        (CLIENT_PRICE_DISTRIB_MIN);  // price distrib min is -ve
   } else if (incoming.new_order.side == Side::BID) {
     incoming.new_order.price = (CLIENT_BASE_PRICE) + (CLIENT_PRICE_DISTRIB_MAX);
   }
@@ -213,7 +215,10 @@ void Engine::handleEvents() {
       processed_events.push(incoming);
       processed_events_count++;
       if (processed_events_count % MAX_PROCESSED_EVENTS_SIZE == 0) {
-        std::cout << processed_events_count << " events processed.\n";
+        std::cout << "Events processed: " << processed_events_count << "\n";
+        std::cout << "Orderbook Size: "
+                  << orderbook.size_asks() + orderbook.size_bids() << "\n";
+        std::cout << "Event queue size: " << event_queue.size() << "\n";
       }
       if (incoming.type == RequestType::New) {
         // For now, we assume correct price and quantity. So every order will be

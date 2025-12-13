@@ -2,6 +2,7 @@
 #define CLIENT_HPP
 
 // #define DEBUG
+#include <mutex>
 #include <random>
 #include <unordered_set>
 #include <vector>
@@ -20,13 +21,13 @@ class Client {
   threadsafe::stl_queue<Trade>&
       trades_queue;  // Contains actual data regarding trades.
   std::vector<ExecutionReport> reports;  // My reports.
+  std::mutex report_mutex;
   std::vector<Trade>
       trades;  // Can be used for storing trades, may be needed by client.
-  std::unordered_set<OrderId> my_orders;
-  static std::random_device rand_device;
-  static std::mt19937 gen;
-  static std::uniform_int_distribution<int> distrib;
-  static std::uniform_int_distribution<int> distrib_bool;
+  std::random_device rand_device;
+  std::mt19937 gen;
+  std::uniform_int_distribution<int> distrib;
+  std::uniform_int_distribution<int> distrib_bool;
 
   void readTrades();  // Can be used by trader to improve strategy.
   void placeOrder(const Order& order);  // Runs as background thread and Calls

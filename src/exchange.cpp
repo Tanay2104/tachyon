@@ -31,9 +31,10 @@ void Exchange::init() {
 void Exchange::addClients(int num) {
   num_clients += num;
   for (int i = 1; i <= num; i++) {
-    clients.emplace_back(Client(i, gateway, trades_queue));
-    client_threads.emplace_back(&Client::run, &clients.back());
-    gateway.addClient(i, &clients.back());
+    clients.push_back(std::make_unique<Client>(i, gateway, trades_queue));
+    Client* client_ptr = clients.back().get();
+    client_threads.emplace_back(&Client::run, client_ptr);
+    gateway.addClient(i, client_ptr);
   }
 }
 

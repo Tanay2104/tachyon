@@ -10,8 +10,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON) # Generates files for clangd
 # Strict warnings
 add_compile_options(-Wall -Wextra -Wpedantic)
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    add_compile_options(-fsanitize=thread -g -O0)
-    add_link_options(-fsanitize=thread)
+    add_compile_options(-fsanitize=address -g -O0)
+    add_link_options(-fsanitize=address)
 endif()
 # Include directories
 include_directories(include)

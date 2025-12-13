@@ -4,7 +4,7 @@
 
 #include "containers/intrusive_list.hpp"
 #include "containers/lock_queue.hpp"
-using OrderId = uint32_t;
+using OrderId = uint64_t;
 using ClientId = uint32_t;
 using Price = uint64_t;      // Precision upto four decimal points supported.
                              // For example, $12.9224 is represented as 129224.

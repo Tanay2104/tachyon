@@ -227,6 +227,9 @@ class intrusive_list {
   // remove by iterator. Return iterator for next element.
   auto remove(iterator it) -> iterator {
     iterator next_it = ++it;
+    if (size() == 0) {
+      throw std::out_of_range("Cannot remove from empty list");
+    }
     --it;
     remove(it.node);
     return next_it;

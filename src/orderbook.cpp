@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <new>
 #include <ranges>
+#include <stdexcept>
 #include <vector>
 
 #include "engine/client.hpp"
@@ -16,8 +17,10 @@ void OrderBook::add(ClientRequest& incoming) {
       incoming.new_order.price - CLIENT_BASE_PRICE -
       (CLIENT_PRICE_DISTRIB_MIN);  // price_distrib_min is negative.
   // NOTE: we use an arena otheriwse objects are destroyed.
-  // arena.push_back(incoming);
-  // arena_idx[incoming.new_order.order_id] = arena.end() - 1;
+  if (book_price < 0 || book_price >= bids.size()) {
+    // TODO: make proper logging instead of throwing.
+    throw std::out_of_range("Price invalid");
+  }
   allocateSlot(incoming);
   if (incoming.new_order.side == Side::BID) {
     bids[book_price].push_back(
@@ -56,24 +59,32 @@ auto OrderBook::cancelOrder(OrderId order_id, ClientRequest& to_cancel)
     return false;
   }
   auto [side, price, it] = list_idx[order_id];
-  if (it == bids[price].end()) {
-    return false;
-  }
-  if (it == asks[price].end()) {
-    return false;
-  }
+
   if (side == Side::BID) {
+    if ((bids[price].size() == 0) || (it == bids[price].end())) {
+      // Corrupted state. idx exists but not in list.
+      list_idx.erase(order_id);
+      return false;
+    }
     to_cancel = *it;
     bids[price].remove(it);
     freeSlot(arena_idx[order_id]);  // Free a slot.
     arena_idx.erase(order_id);      // Also erase it's map.
+    list_idx.erase(order_id);
     return true;
   }
   if (side == Side::ASK) {
+    if ((asks[price].size() == 0) || (it == asks[price].end())) {
+      // Corrupted state. idx exists but not in list.
+      list_idx.erase(order_id);
+      return false;
+    }
+
     to_cancel = *it;
     asks[price].remove(it);
     freeSlot(arena_idx[order_id]);  // Free a slot.
     arena_idx.erase(order_id);      // Also erase it's map.
+    list_idx.erase(order_id);
     return true;
   }
   return false;
@@ -108,8 +119,8 @@ auto OrderBook::size_asks() -> size_t {
   size_t size = 0;
   for (size_t i = 0; i < asks.size(); i++) {
     size += asks[i].size();
-    std::cout << size << std::endl;
   }
+  return size;
 }
 
 auto OrderBook::size_bids() -> size_t {
@@ -117,4 +128,5 @@ auto OrderBook::size_bids() -> size_t {
   for (size_t i = 0; i < bids.size(); i++) {
     size += bids[i].size();
   }
+  return size;
 }

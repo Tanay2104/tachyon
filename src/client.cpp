@@ -1,5 +1,6 @@
 #include "engine/client.hpp"
 
+#include <chrono>
 #include <cstdint>
 #include <format>
 #include <fstream>
@@ -13,15 +14,15 @@
 // between 105 and 95.
 extern std::atomic<bool> keep_running;
 extern std::atomic<bool> start_exchange;
-std::random_device Client::rand_device;
-std::mt19937 Client::gen(Client::rand_device());
-std::uniform_int_distribution<int> Client::distrib(CLIENT_PRICE_DISTRIB_MIN,
-                                                   CLIENT_PRICE_DISTRIB_MAX);
-std::uniform_int_distribution<int> Client::distrib_bool(0, 1);
 
 Client::Client(ClientId my_id, GateWay& gtway,
                threadsafe::stl_queue<Trade>& trades_queue)
-    : my_id(my_id), gateway(gtway), trades_queue(trades_queue) {
+    : my_id(my_id),
+      gateway(gtway),
+      trades_queue(trades_queue),
+      gen(std::random_device{}()),
+      distrib(CLIENT_PRICE_DISTRIB_MIN, CLIENT_PRICE_DISTRIB_MAX),
+      distrib_bool(0, 1) {
   this->local_order_id = 1;  // Otherwise cancellaiton one can give problems.
   std::ofstream file;
   std::string filename =
@@ -37,7 +38,8 @@ Client::~Client() { writeExecutionReport(); }
 // TODO: add cancellation facility.
 auto Client::generateOrder() -> Order {
   Order order;
-  order.order_id = (my_id << LOCAL_ORDER_BITS | local_order_id++);
+  order.order_id =
+      (static_cast<uint64_t>(my_id) << LOCAL_ORDER_BITS | local_order_id++);
   order.price = (CLIENT_BASE_PRICE) + distrib(gen);
   order.quantity = CLIENT_BASE_QUANTITY + distrib(gen);
   int r_int_side = distrib_bool(gen);
@@ -56,7 +58,11 @@ void Client::run() {
     std::this_thread::yield();
   }
   while (keep_running.load(std::memory_order_relaxed)) {
-    std::this_thread::sleep_for(std::chrono::microseconds(200));
+    size_t count = 0;
+    for (int i = 0; i < 7500; i++) {
+      count += distrib(gen) % 10000;
+    }  // Sleep for isn't accurate enough.
+    // std::this_thread::sleep_for(std::chrono::nanoseconds(1));
     gateway.addOrder(generateOrder(), my_id);
     if (local_order_id % (ORDER_CANCELLATION_FREQ) == 0) {
       OrderId to_delete = local_order_id - (rand() % (ORDER_CANCELLATION_FREQ));
@@ -74,6 +80,7 @@ void Client::readTrades() {
 }
 
 void Client::addReport(ExecutionReport exec_report) {
+  std::lock_guard<std::mutex> lock(report_mutex);
   reports.push_back(exec_report);
 }
 
@@ -82,6 +89,7 @@ void Client::writeExecutionReport() {
   std::string filename =
       std::format("logs/execution_reports_client_{}.txt", my_id);
   file.open(filename, std::ios::app);
+  std::lock_guard<std::mutex> lock(report_mutex);
   for (auto report : reports) {
     file << "CLIENT " << report.client_id << " "
          << "ORDER ID " << report.order_id << " "

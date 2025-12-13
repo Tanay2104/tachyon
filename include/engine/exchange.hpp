@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <deque>
 #include <fstream>
+#include <memory>
 #include <thread>
 #include <vector>
 
@@ -32,7 +33,7 @@ class Exchange {
 
   // Clients.
   int num_clients = 0;
-  std::deque<Client> clients;
+  std::deque<std::unique_ptr<Client>> clients;
   std::deque<std::thread> client_threads;
 
   // Threads.

@@ -1,11 +1,11 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <engine/constants.hpp>
 #include <vector>
 
 #include "engine/orderbook.hpp"
 #include "engine/types.hpp"
-#include <engine/constants.hpp>
 // ============================================================================
 // Test Helper: Deterministic Request Generator
 // ============================================================================
@@ -32,7 +32,8 @@ class OrderBookTest : public ::testing::Test {
     if (type == RequestType::New) {
       req.new_order.order_id = oid;
       req.new_order.side = side;
-      req.new_order.price = CLIENT_BASE_PRICE + CLIENT_PRICE_DISTRIB_MIN + price;
+      req.new_order.price =
+          CLIENT_BASE_PRICE + CLIENT_PRICE_DISTRIB_MIN + price;
       req.new_order.quantity = qty;
       req.new_order.order_type = OrderType::LIMIT;
       req.new_order.tif = TimeInForce::GTC;
@@ -52,7 +53,7 @@ TEST_F(OrderBookTest, SingleOrderNoMatch) {
   auto sell = makeReq(1, 101, Side::ASK, 100, 10);
   book.add(sell);
 
- //  EXPECT_EQ(book.size_asks(), 1);
+  EXPECT_EQ(book.size_asks(), 1);
   // Place a Buy order with price too low
   auto buyLow = makeReq(2, 201, Side::BID, 90, 10);  // Buy @ 90 vs Sell @ 100
   book.match(buyLow, trades);
@@ -72,7 +73,8 @@ TEST_F(OrderBookTest, FullMatch) {
 
   ASSERT_EQ(trades.size(), 1);
   EXPECT_EQ(trades[0].first.quantity, 50);
-  EXPECT_EQ(trades[0].first.price, CLIENT_BASE_PRICE + CLIENT_PRICE_DISTRIB_MIN + 100);
+  EXPECT_EQ(trades[0].first.price,
+            CLIENT_BASE_PRICE + CLIENT_PRICE_DISTRIB_MIN + 100);
   EXPECT_EQ(trades[0].first.maker_order_id, 101);
   EXPECT_EQ(trades[0].first.taker_order_id, 201);
 }
@@ -88,7 +90,8 @@ TEST_F(OrderBookTest, AggressorPriceImprovement) {
   book.match(buy, trades);
 
   ASSERT_EQ(trades.size(), 1);
-  EXPECT_EQ(trades[0].first.price, CLIENT_BASE_PRICE + CLIENT_PRICE_DISTRIB_MIN + 100);
+  EXPECT_EQ(trades[0].first.price,
+            CLIENT_BASE_PRICE + CLIENT_PRICE_DISTRIB_MIN + 100);
   EXPECT_EQ(trades[0].first.quantity, 10);
 }
 
@@ -244,15 +247,18 @@ TEST_F(OrderBookTest, WalkingTheBook) {
 
   // 1. Clears 10 @ 100
   EXPECT_EQ(trades[0].first.maker_order_id, 10);
-  EXPECT_EQ(trades[0].first.price, CLIENT_BASE_PRICE + CLIENT_PRICE_DISTRIB_MIN + 100);
+  EXPECT_EQ(trades[0].first.price,
+            CLIENT_BASE_PRICE + CLIENT_PRICE_DISTRIB_MIN + 100);
 
   // 2. Clears 10 @ 101
   EXPECT_EQ(trades[1].first.maker_order_id, 11);
-  EXPECT_EQ(trades[1].first.price, CLIENT_BASE_PRICE + CLIENT_PRICE_DISTRIB_MIN + 101);
+  EXPECT_EQ(trades[1].first.price,
+            CLIENT_BASE_PRICE + CLIENT_PRICE_DISTRIB_MIN + 101);
 
   // 3. Clears 5 @ 102 (Partial)
   EXPECT_EQ(trades[2].first.maker_order_id, 12);
-  EXPECT_EQ(trades[2].first.price, CLIENT_BASE_PRICE + CLIENT_PRICE_DISTRIB_MIN +102);
+  EXPECT_EQ(trades[2].first.price,
+            CLIENT_BASE_PRICE + CLIENT_PRICE_DISTRIB_MIN + 102);
   EXPECT_EQ(trades[2].first.quantity, 5);
 }
 

@@ -71,7 +71,8 @@ class OrderBook {
       }
     } else if (incoming.new_order.side == Side::ASK) {
       book_price = book.size() - 1;
-      while (book_price >= 0 && book[book_price].size() == 0) {
+      while (book_price >= 0 && book_price != -1 &&
+             book[book_price].size() == 0) {
         book_price--;
       }
       if (book_price == -1) {
@@ -112,11 +113,11 @@ class OrderBook {
         trades.push_back({new_trade, *book_it});
         // TODO: log execution reports too.
         if (book_it->new_order.quantity == 0) {
-          // arena.erase(arena_idx[book_it->new_order.order_id]); // deleting
           // old elements from arena.
           // TODO: erasing from arena has linear complexity. Do something.
           freeSlot(arena_idx[book_it->new_order.order_id]);
           arena_idx.erase(book_it->new_order.order_id);
+          list_idx.erase(book_it->new_order.order_id);
           book_it =
               book[book_price].remove(book_it);  // remove finished orders.
 
