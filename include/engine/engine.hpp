@@ -23,7 +23,8 @@ class Engine {
 
   // Helper functions for logging.
   void logNotFound(ClientRequest incoming);
-  void logSelfTrade(ClientRequest incoming);    // User tried self trade
+  void logSelfTrade(ClientRequest incoming);  // User tried self trade
+  void logInvalidOrder(ClientRequest incoming);
   void logNewOrder(ClientRequest incoming);     // New order logged
   void logCancelOrder(ClientRequest incoming);  // Cancellation successful.
   void logTrade(

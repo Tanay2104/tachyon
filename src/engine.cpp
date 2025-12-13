@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <fstream>
 #include <iostream>
+#include <limits>
+#include <regex>
 #include <thread>
 
 #include "containers/lock_queue.hpp"
@@ -81,7 +83,18 @@ void Engine::logCancelOrder(ClientRequest incoming) {
   exec_report.side = incoming.new_order.side;
   execution_reports.push(exec_report);
 }
-
+void Engine::logInvalidOrder(ClientRequest incoming) {
+  ExecutionReport exec_report;
+  exec_report.client_id = incoming.client_id;
+  exec_report.order_id = incoming.new_order.order_id;
+  exec_report.price = incoming.new_order.price;
+  exec_report.last_quantity = 0;
+  exec_report.remaining_quantity = incoming.new_order.quantity;
+  exec_report.type = ExecType::REJECTED;
+  exec_report.reason = RejectReason::INVALID_ORDER_TYPE;
+  exec_report.side = incoming.new_order.side;
+  execution_reports.push(exec_report);
+}
 void Engine::logNotFound(ClientRequest incoming) {
   ExecutionReport exec_report;
   exec_report.client_id = incoming.client_id;
@@ -155,7 +168,7 @@ void Engine::handle_GTC_LIMIT(ClientRequest incoming) {
 }
 
 void Engine::handle_GTC_MARKET(ClientRequest incoming) {
-  incoming.order_id_to_cancel++;  // DUMMY
+  logInvalidOrder(incoming);
 }
 
 void Engine::handle_IOC_LIMIT(ClientRequest incoming) {
@@ -170,7 +183,19 @@ void Engine::handle_IOC_LIMIT(ClientRequest incoming) {
 }
 
 void Engine::handle_IOC_MARKET(ClientRequest incoming) {
-  incoming.order_id_to_cancel++;
+  if (incoming.new_order.side == Side::ASK) {  // We set price to zero.
+    incoming.new_order.price = 0;
+  } else if (incoming.new_order.side == Side::BID) {
+    incoming.new_order.price = std::numeric_limits<Price>::max();
+  }
+  trades_buffer.clear();
+  orderbook.match(incoming, trades_buffer);
+  // NOTE: since this is IOC order, we do NOT pass add it irrespective of
+  // remaining quantity.
+  for (auto [trade, resting] : trades_buffer) {
+    trades_queue.push(trade);  // Maybe we don't need it. Let's see.
+    logTrade(resting, incoming, trade.quantity);
+  }
 }
 
 void Engine::handleEvents() {

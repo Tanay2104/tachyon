@@ -74,6 +74,7 @@ enum class RejectReason : uint8_t {
   QUANTITY_INVALID = 3,
   MARKET_CLOSED = 4,
   SELF_TRADE = 5,
+  INVALID_ORDER_TYPE = 6
 };
 
 // Execution report sent to the client regarding the order.

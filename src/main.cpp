@@ -13,7 +13,7 @@ auto main() -> int {
   // The main entry point of our simulation.
   std::signal(SIGINT, signal_handler);
 
-  uint32_t duration = 200000;  // Running duration in ms.
+  uint32_t duration = 200;  // Running duration in ms.
   Exchange exchange;
   exchange.addClients(4);
   exchange.init();

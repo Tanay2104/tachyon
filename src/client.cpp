@@ -39,10 +39,10 @@ auto Client::generateOrder() -> Order {
   order.price = (100 * 1000) + distrib(gen);
   order.quantity = 50000 + distrib(gen);
   int r_int_side = distrib_bool(gen);
-  // int r_int_order_type = distrib_bool(gen);
+  int r_int_order_type = distrib_bool(gen);
   int r_int_tif = distrib_bool(gen);
   order.side = static_cast<Side>(r_int_side);
-  order.order_type = OrderType::LIMIT;
+  order.order_type = static_cast<OrderType>(r_int_order_type);
   order.tif = static_cast<TimeInForce>(r_int_tif);
 
   return order;
@@ -54,7 +54,7 @@ void Client::run() {
     std::this_thread::yield();
   }
   while (keep_running.load(std::memory_order_relaxed)) {
-    std::this_thread::sleep_for(std::chrono::microseconds(20));
+    std::this_thread::sleep_for(std::chrono::microseconds(200));
     gateway.addOrder(generateOrder(), my_id);
     if (local_order_id % 20 == 0) {
       OrderId to_delete = local_order_id - (rand() % 20);
@@ -114,6 +114,9 @@ void Client::writeExecutionReport() {
             break;
           case RejectReason::SELF_TRADE:
             file << "SELF_TRADE ";
+            break;
+          case RejectReason::INVALID_ORDER_TYPE:
+            file << "INVALID_ORDER_TYPE ";
             break;
         }
         break;
