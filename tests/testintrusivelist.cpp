@@ -257,7 +257,32 @@ TEST_F(IntrusiveListTest, MoveSemantics_SentinelUpdate) {
     // accessing listMoved.back() might crash.
   }
 }
+TEST_F(IntrusiveListTest, Iterator_RangeBasedFor) {
+  list.push_back(d1);  // id 1
+  list.push_back(d2);  // id 2
+  list.push_back(d3);  // id 3
 
+  int sum = 0;
+  // This uses begin(), end(), operator++, operator*
+  for (auto& item : list) {
+    sum += item.id;
+  }
+
+  EXPECT_EQ(sum, 6);
+}
+
+TEST_F(IntrusiveListTest, Iterator_StdAlgorithm) {
+  list.push_back(d1);
+  list.push_back(d2);
+
+  // Test compatibility with std::find_if
+  auto it = std::find_if(list.begin(), list.end(),
+                         [](const TestData& item) { return item.id == 2; });
+
+  ASSERT_NE(it, list.end());
+  EXPECT_EQ(it->id, 2);
+  EXPECT_EQ(it->name, "Two");
+}
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

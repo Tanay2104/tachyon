@@ -8,6 +8,7 @@
 #include <iostream>
 #include <iterator>
 #include <stdexcept>
+#include <type_traits>
 
 #define container_of(ptr, type, member)               \
   ({                                                  \
@@ -28,7 +29,7 @@ struct IntrusiveListNode {  // Must be present in data as intr_node;
 
 template <typename T>
 class intrusive_list {
- public:
+ public:  // TODO: make this private.
   IntrusiveListNode root;
   size_t list_size{};
 
@@ -83,7 +84,6 @@ class intrusive_list {
   }
   // Remove an element from the list.
   void remove(T& data) { remove(&data.intr_node); }
-
   // Push an element to the back of the list.
   void push_back(IntrusiveListNode* node) { addNode(node, &root, root.next); }
   void push_back(T& data) { push_back(&data.intr_node); }
@@ -143,6 +143,86 @@ class intrusive_list {
 
       current = current->prev;
     }
+  }
+
+  // Iterators.
+  template <bool IsConst>
+  struct ListIterator {
+    // Standard iterator traits.
+    using iterator_category = std::bidirectional_iterator_tag;
+    using value_type = T;
+    using difference_type = std::ptrdiff_t;
+    using pointer = std::conditional_t<IsConst, const T*, T*>;
+    using reference = std::conditional_t<IsConst, const T&, T&>;
+
+    IntrusiveListNode* node;
+    explicit ListIterator(IntrusiveListNode* n) : node(n) {}
+    // allow convert from it to const it.
+    template <bool WasConst, typename = std::enable_if_t<IsConst && !WasConst>>
+    ListIterator(const ListIterator<WasConst>& other) : node(other.node) {}
+
+    // deference
+    auto operator*() const -> reference {
+      return *(container_of(node, T, intr_node));
+    }
+    // arrow operator.
+    auto operator->() const -> pointer {
+      return container_of(node, T, intr_node);
+    }
+
+    // ++it.
+    auto operator++() -> ListIterator& {
+      node = node->prev;
+      return *this;
+    }
+    // it++.
+    auto operator++(int) -> ListIterator {
+      ListIterator temp = *this;
+      node = node->prev;
+      return temp;
+    }
+    // --it
+    auto operator--() -> ListIterator& {
+      node = node->next;
+      return *this;
+    }
+
+    // it--
+    auto operator--(int) -> ListIterator {
+      ListIterator temp = *this;
+      node = node->next;
+      return temp;
+    }
+
+    // equality cmp.
+    auto operator==(const ListIterator& other) const -> bool {
+      return (node == other.node);
+    }
+    auto operator!=(const ListIterator& other) const -> bool {
+      return (node != other.node);
+    }
+  };
+
+  using iterator = ListIterator<false>;
+  using const_iterator = ListIterator<true>;
+
+  auto begin() -> iterator { return iterator(root.prev); }
+  auto end() -> iterator { return iterator(&root); }
+
+  auto begin() const -> const_iterator { return const_iterator(root.prev); }
+  auto end() const -> const_iterator {
+    return const_iterator(const_cast<IntrusiveListNode*>(&root));
+  }
+  auto cbegin() const -> const_iterator { return begin(); }
+  auto cend() const -> const_iterator { return end(); }
+
+  // Some functions using iterators.
+
+  auto remove(iterator it) -> iterator {
+    iterator next_it = ++it;
+    --it;
+    remove(it.node);
+    return next_it;
   }
 };
 
