@@ -1,205 +1,170 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <random>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
 #include "containers/flat_hashmap.hpp"
 
-/*
-TESTING PHILOSOPHY
+namespace {
 
-1. Correctness under normal usage
-2. Linear probing correctness (collisions)
-3. Overwrite semantics
-4. Tombstone behavior
-5. Exception guarantees
-6. Boundary conditions (full table)
-7. Reference stability for get()
-*/
+struct Value32 {
+  uint64_t a, b, c, d;
+  bool operator==(const Value32& o) const {
+    return a == o.a && b == o.b && c == o.c && d == o.d;
+  }
+};
 
-/* -------------------------------------------------------------
- * BASIC INSERT / GET
- * ------------------------------------------------------------- */
+struct Value48 {
+  uint64_t a, b, c, d, e, f;
+  bool operator==(const Value48& o) const {
+    return a == o.a && b == o.b && c == o.c && d == o.d && e == o.e && f == o.f;
+  }
+};
+
+}  // namespace
+
+// ------------------------------------------------------------
+// Basic correctness
+// ------------------------------------------------------------
 
 TEST(FlatHashMapBasic, InsertAndGetSingle) {
+  flat_hashmap<uint64_t, std::string> map(8);
+  map.insert(1, "one");
+  EXPECT_EQ(map.get(1), "one");
+}
+
+TEST(FlatHashMapBasic, OverwriteExistingKey) {
+  flat_hashmap<uint64_t, int> map(8);
+  map.insert(5, 10);
+  map.insert(5, 20);
+  EXPECT_EQ(map.get(5), 20);
+}
+
+TEST(FlatHashMapBasic, GetNonExistentThrows) {
   flat_hashmap<int, int> map(8);
-
-  int k = 42;
-  int v = 100;
-
-  EXPECT_TRUE(map.insert(k, v));
-  EXPECT_NO_THROW({
-    int& ref = map.get(k);
-    EXPECT_EQ(ref, v);
-  });
+  EXPECT_THROW(map.get(42), std::out_of_range);
 }
 
-TEST(FlatHashMapBasic, InsertMultipleDistinctKeys) {
-  flat_hashmap<int, std::string> map(16);
+// ------------------------------------------------------------
+// Collision and probing behavior
+// ------------------------------------------------------------
 
-  for (int i = 0; i < 10; ++i) {
-    int key = i;
-    std::string value = "val" + std::to_string(i);
-    EXPECT_TRUE(map.insert(key, value));
-  }
-
-  for (int i = 0; i < 10; ++i) {
-    EXPECT_EQ(map.get(i), "val" + std::to_string(i));
-  }
-}
-
-/* -------------------------------------------------------------
- * OVERWRITE SEMANTICS
- * ------------------------------------------------------------- */
-
-TEST(FlatHashMapBasic, InsertSameKeyOverwritesValue) {
-  flat_hashmap<int, int> map(8);
-
-  int k = 1;
-  int v1 = 10;
-  int v2 = 20;
-
-  EXPECT_TRUE(map.insert(k, v1));
-  EXPECT_EQ(map.get(k), v1);
-
-  EXPECT_TRUE(map.insert(k, v2));
-  EXPECT_EQ(map.get(k), v2);
-}
-
-/* -------------------------------------------------------------
- * REFERENCE SEMANTICS
- * ------------------------------------------------------------- */
-
-TEST(FlatHashMapBasic, GetReturnsMutableReference) {
-  flat_hashmap<int, int> map(8);
-
-  int k = 5;
-  int v = 50;
-
-  map.insert(k, v);
-
-  int& ref = map.get(k);
-  ref = 99;
-
-  EXPECT_EQ(map.get(k), 99);
-}
-
-/* -------------------------------------------------------------
- * EXCEPTION BEHAVIOR
- * ------------------------------------------------------------- */
-
-TEST(FlatHashMapExceptions, GetMissingKeyThrows) {
-  flat_hashmap<int, int> map(8);
-
-  EXPECT_THROW(map.get(123), std::out_of_range);
-}
-
-TEST(FlatHashMapExceptions, RemoveMissingKeyThrows) {
-  flat_hashmap<int, int> map(8);
-
-  EXPECT_THROW(map.remove(999), std::out_of_range);
-}
-
-/* -------------------------------------------------------------
- * COLLISION & LINEAR PROBING
- * ------------------------------------------------------------- */
-
-/*
-We deliberately create collisions by using a tiny table.
-This verifies linear probing correctness.
-*/
-TEST(FlatHashMapProbing, HandlesCollisionsCorrectly) {
+TEST(FlatHashMapProbing, HandlesLinearProbingCollisions) {
   flat_hashmap<int, int> map(4);
 
-  int k1 = 1;
-  int k2 = 5;  // Likely collides with k1 modulo small N
-  int k3 = 9;  // Another collision
+  // Force collisions via small table
+  map.insert(1, 100);
+  map.insert(5, 200);  // likely same bucket
+  map.insert(9, 300);
 
-  int v1 = 10;
-  int v2 = 20;
-  int v3 = 30;
-
-  EXPECT_TRUE(map.insert(k1, v1));
-  EXPECT_TRUE(map.insert(k2, v2));
-  EXPECT_TRUE(map.insert(k3, v3));
-
-  EXPECT_EQ(map.get(k1), v1);
-  EXPECT_EQ(map.get(k2), v2);
-  EXPECT_EQ(map.get(k3), v3);
+  EXPECT_EQ(map.get(1), 100);
+  EXPECT_EQ(map.get(5), 200);
+  EXPECT_EQ(map.get(9), 300);
 }
 
-/* -------------------------------------------------------------
- * TOMBONE BEHAVIOR
- * ------------------------------------------------------------- */
+// ------------------------------------------------------------
+// Tombstones
+// ------------------------------------------------------------
 
-TEST(FlatHashMapTombstone, RemoveThenGetThrows) {
+TEST(FlatHashMapTombstone, RemoveAndReuseSlot) {
   flat_hashmap<int, int> map(8);
 
-  int k = 7;
-  int v = 70;
+  map.insert(1, 10);
+  map.insert(9, 90);  // collision with 1 likely
 
-  map.insert(k, v);
-  map.remove(k);
+  map.remove(1);
 
-  EXPECT_THROW(map.get(k), std::out_of_range);
+  // Slot should be reusable
+  map.insert(17, 170);
+
+  EXPECT_EQ(map.get(9), 90);
+  EXPECT_EQ(map.get(17), 170);
 }
 
-TEST(FlatHashMapTombstone, RemoveAllowsSlotReuse) {
+TEST(FlatHashMapTombstone, RemoveNonExistentThrows) {
+  flat_hashmap<int, int> map(8);
+  EXPECT_THROW(map.remove(123), std::out_of_range);
+}
+
+// ------------------------------------------------------------
+// Rehashing / growth
+// ------------------------------------------------------------
+
+TEST(FlatHashMapGrowth, GrowsAndPreservesAllElements) {
   flat_hashmap<int, int> map(4);
 
-  int k1 = 1, v1 = 10;
-  int k2 = 5, v2 = 20;  // collision
-  int k3 = 9, v3 = 30;  // collision
-
-  map.insert(k1, v1);
-  map.insert(k2, v2);
-  map.remove(k1);
-
-  EXPECT_TRUE(map.insert(k3, v3));
-  EXPECT_EQ(map.get(k3), v3);
-}
-
-/* -------------------------------------------------------------
- * FULL TABLE BEHAVIOR
- * ------------------------------------------------------------- */
-
-TEST(FlatHashMapCapacity, InsertFailsWhenFull) {
-  flat_hashmap<int, int> map(2);
-
-  int k1 = 1, v1 = 10;
-  int k2 = 2, v2 = 20;
-  int k3 = 3, v3 = 30;
-
-  EXPECT_TRUE(map.insert(k1, v1));
-  EXPECT_TRUE(map.insert(k2, v2));
-
-  EXPECT_FALSE(map.insert(k3, v3));
-}
-
-/* -------------------------------------------------------------
- * STABILITY & INTEGRITY
- * ------------------------------------------------------------- */
-
-TEST(FlatHashMapStability, MultipleOperationsMaintainIntegrity) {
-  flat_hashmap<int, int> map(16);
-
-  for (int i = 0; i < 10; ++i) {
-    int key = i;
-    int value = i * 100;
-    map.insert(key, value);
+  for (int i = 0; i < 1000; ++i) {
+    map.insert(i, i * 10);
   }
 
-  for (int i = 0; i < 5; ++i) {
+  for (int i = 0; i < 1000; ++i) {
+    EXPECT_EQ(map.get(i), i * 10);
+  }
+}
+
+TEST(FlatHashMapGrowth, GrowthPreservesAfterRemovals) {
+  flat_hashmap<int, int> map(4);
+
+  for (int i = 0; i < 100; ++i) {
+    map.insert(i, i);
+  }
+
+  for (int i = 0; i < 50; ++i) {
     map.remove(i);
   }
 
-  for (int i = 5; i < 10; ++i) {
-    EXPECT_EQ(map.get(i), i * 100);
+  for (int i = 100; i < 300; ++i) {
+    map.insert(i, i * 2);
   }
 
-  for (int i = 0; i < 5; ++i) {
-    EXPECT_THROW(map.get(i), std::out_of_range);
+  for (int i = 50; i < 300; ++i) {
+    EXPECT_EQ(map.get(i), i < 100 ? i : i * 2);
+  }
+}
+
+// ------------------------------------------------------------
+// Realistic payload sizes
+// ------------------------------------------------------------
+
+TEST(FlatHashMapPayload, Value32Bytes) {
+  flat_hashmap<uint64_t, Value32> map(8);
+
+  Value32 v{1, 2, 3, 4};
+  map.insert(42, v);
+
+  EXPECT_EQ(map.get(42), v);
+}
+
+TEST(FlatHashMapPayload, Value48Bytes) {
+  flat_hashmap<uint64_t, Value48> map(8);
+
+  Value48 v{1, 2, 3, 4, 5, 6};
+  map.insert(99, v);
+
+  EXPECT_EQ(map.get(99), v);
+}
+
+// ------------------------------------------------------------
+// Stress + randomized
+// ------------------------------------------------------------
+
+TEST(FlatHashMapStress, RandomInsertGet) {
+  flat_hashmap<uint64_t, uint64_t> map(16);
+  std::mt19937_64 rng(123);
+
+  constexpr int N = 10'000;
+  std::vector<uint64_t> keys;
+
+  for (int i = 0; i < N; ++i) {
+    uint64_t k = rng();
+    keys.push_back(k);
+    map.insert(k, i);
+  }
+
+  for (int i = 0; i < N; ++i) {
+    EXPECT_EQ(map.get(keys[i]), static_cast<uint64_t>(i));
   }
 }

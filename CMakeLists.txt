@@ -16,9 +16,12 @@ endif()
 # Include directories
 include_directories(include)
 
+cmake_policy(SET CMP0167 NEW)
+find_package(Boost REQUIRED COMPONENTS filesystem thread program_options)
+include_directories(${Boost_INCLUDE_DIRS})
+
 # Dependency management
 include(FetchContent)
-
 # Fetch Google Test
 FetchContent_Declare(
   googletest
@@ -35,6 +38,8 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(googlebenchmark)
 
+
+
 # Building the engine
 add_library(core_engine
           src/client.cpp
@@ -42,7 +47,6 @@ add_library(core_engine
           src/gateway.cpp
           src/orderbook.cpp
           src/exchange.cpp
-          # PUT src FILES HERE
 )
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 # Building the main executable
@@ -50,6 +54,21 @@ add_executable(app
               src/main.cpp)
 target_link_libraries(app PRIVATE core_engine)
 
+ add_executable(boost_server src/boost_server.cpp)
+target_link_libraries(boost_server
+                    PRIVATE
+                    Boost::filesystem
+                    Boost::thread
+                    Boost::program_options
+                    Boost::headers)
+
+add_executable(boost_client src/boost_client.cpp)
+target_link_libraries(boost_client
+                    PRIVATE
+                    Boost::filesystem
+                    Boost::thread
+                    Boost::program_options
+                    Boost::headers)
 # Build tests
 enable_testing()
 add_executable(testorderbook 
@@ -59,12 +78,20 @@ add_executable(testorderbook
 
 add_executable(testcircularbuffer
                 tests/testcircularbuffer.cpp)
-
 add_executable(testintrusivelist
               tests/testintrusivelist.cpp)
+add_executable(testserialisation
+            tests/testserialisation.cpp)
+add_executable(testflathashmap
+            tests/testflathashmap.cpp)
+
+
 target_link_libraries(testorderbook PRIVATE core_engine gtest_main)
 target_link_libraries(testcircularbuffer PRIVATE gtest_main)
 target_link_libraries(testintrusivelist PRIVATE gtest_main)
+target_link_libraries(testserialisation PRIVATE gtest_main)
+target_link_libraries(testflathashmap PRIVATE gtest_main)
+
 # Build benchmarks
 add_executable(benchmarkorderbook
             benchmarks/benchmark_main.cpp
@@ -75,9 +102,11 @@ add_executable(benchmarklockqueue
           )
 add_executable(benchmarkintrusivelist
             benchmarks/benchmark_intrusive_list.cpp)
-
+add_executable(benchmarkflathashmap
+          benchmarks/benchmark_flat_hashmap.cpp)
 
 target_link_libraries(benchmarkorderbook PRIVATE core_engine benchmark::benchmark)
 target_link_libraries(benchmarklockqueue PRIVATE benchmark::benchmark)
 target_link_libraries(benchmarkintrusivelist PRIVATE benchmark::benchmark)
+target_link_libraries(benchmarkflathashmap PRIVATE benchmark::benchmark)
 
