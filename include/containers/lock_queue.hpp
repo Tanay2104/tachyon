@@ -6,10 +6,9 @@
 #include <cstdint>
 #include <cstring>
 #include <deque>
-#include <iostream>
 #include <mutex>
-#include <ostream>
-
+#include <vector>
+extern uint64_t batch_size;
 namespace threadsafe {
 template <typename T>
 class lock_queue {
@@ -19,7 +18,7 @@ class lock_queue {
   size_t head;
   size_t tail;
   static const uint8_t MULTIPLIER = 2;
-  static const uint8_t INIT_SIZE = 128;
+  static const uint8_t INIT_SIZE = 4;
 
   mutable std::mutex mut;  // the mutex must be mutable
   std::condition_variable cv;
@@ -28,7 +27,7 @@ class lock_queue {
     size_t new_N = N * MULTIPLIER;
     T* tmp = new T[new_N];
     for (size_t i = 0; i < N; ++i) {
-      tmp[i] = A[(head + i) % N];  // This is slow but correct logic
+      tmp[i] = A[(head + i) % N];  // This is slow
     }
     delete[] A;
     tail = N - 1;
@@ -40,13 +39,13 @@ class lock_queue {
 
  public:
   // Constructor for queue
-  lock_queue() {
+  lock_queue<T>() {
     A = new T[INIT_SIZE];
     N = INIT_SIZE;
     head = tail = 0;
   }
 
-  lock_queue(const lock_queue<T>& other) {
+  lock_queue<T>(const lock_queue<T>& other) {
     std::lock_guard<std::mutex> lg(other.mut);
     this->A = new T[other.N];
     this->N = other.N;
@@ -57,7 +56,7 @@ class lock_queue {
     this->tail = other.tail;
   }
 
-  ~lock_queue() { delete[] A; }
+  ~lock_queue<T>() { delete[] A; }
 
   bool empty() {
     std::lock_guard<std::mutex> lg(mut);
@@ -120,7 +119,7 @@ class stl_queue {
     std::unique_lock<std::mutex> lk(mut);
     cv.wait(lk, [this]() { !this->data_queue.empty(); });
     x = data_queue.front();
-    data_queue.pop();
+    data_queue.pop_front();
   }
   bool try_pop(T& x) {
     std::lock_guard<std::mutex> lk(mut);
@@ -129,15 +128,27 @@ class stl_queue {
     data_queue.pop_front();
     return true;
   }
+  void batch_pop(std::vector<T>& batch) {
+    std::lock_guard<std::mutex> lk(mut);
+    for (size_t i = 0; i < std::min(batch_size, data_queue.size()); i++) {
+      batch.push_back(data_queue.front());
+      data_queue.pop_front();
+    }
+  }
   bool empty() {
     std::lock_guard<std::mutex> lk(mut);
     return data_queue.empty();
   }
   size_t size() {
     std::lock_guard<std::mutex> lk(mut);
-    // if (data_queue.size() % 100 == 0) std::cout << "queue size: " <<
-    // data_queue.size() << std::endl;
     return data_queue.size();
+  }
+  void pop_all(std::deque<T>& destination) {
+    std::lock_guard<std::mutex> lk(mut);
+    // The Magic Move: O(1) Swap
+    // We steal the internal buffer of data_queue. data_queue becomes empty.
+    // destination gets all the data.
+    data_queue.swap(destination);
   }
 };
 }  // namespace threadsafe

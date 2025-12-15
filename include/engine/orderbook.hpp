@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "containers/flat_hashmap.hpp"
 #include "containers/intrusive_list.hpp"
 #include "engine/constants.hpp"
 #include "engine/types.hpp"
@@ -48,9 +49,9 @@ class OrderBook {
   // std::set<ClientRequest, bids_cmp> bids;  // People buying stuff.
   // std::set<ClientRequest, asks_cmp> asks;  // People selling stuff.
   // std::deque<ClientRequest> arena;  // This is where the orders live.
-  std::unordered_map<OrderId, uint32_t> arena_idx;
-  std::unordered_map<
-      OrderId, std::tuple<Side, Price,
+  flat_hashmap<OrderId, uint32_t> arena_idx;
+  flat_hashmap<OrderId,
+               std::tuple<Side, Price,
                           intrusive_list<ClientRequest>::ListIterator<false>>>
       list_idx;
   std::vector<intrusive_list<ClientRequest>> bids;
@@ -80,7 +81,6 @@ class OrderBook {
       }
     }
     auto book_it = book[book_price].begin();
-
     while (incoming.new_order.quantity > 0 && book_price < book.size() &&
            book_price >= 0) {
       while (incoming.new_order.quantity > 0 &&
@@ -106,18 +106,14 @@ class OrderBook {
         new_trade.price = book_it->new_order.price;
         new_trade.maker_order_id = book_it->new_order.order_id;
         new_trade.taker_order_id = incoming.new_order.order_id;
-        new_trade.time_stamp =
-            std::chrono::duration_cast<std::chrono::nanoseconds>(
-                std::chrono::system_clock::now().time_since_epoch())
-                .count();
         trades.push_back({new_trade, *book_it});
         // TODO: log execution reports too.
         if (book_it->new_order.quantity == 0) {
           // old elements from arena.
           // TODO: erasing from arena has linear complexity. Do something.
-          freeSlot(arena_idx[book_it->new_order.order_id]);
-          arena_idx.erase(book_it->new_order.order_id);
-          list_idx.erase(book_it->new_order.order_id);
+          freeSlot(arena_idx.get(book_it->new_order.order_id));
+          arena_idx.remove(book_it->new_order.order_id);
+          list_idx.remove(book_it->new_order.order_id);
           book_it =
               book[book_price].remove(book_it);  // remove finished orders.
 

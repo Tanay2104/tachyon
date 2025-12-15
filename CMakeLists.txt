@@ -17,7 +17,7 @@ endif()
 include_directories(include)
 
 cmake_policy(SET CMP0167 NEW)
-find_package(Boost REQUIRED COMPONENTS filesystem thread program_options)
+
 include_directories(${Boost_INCLUDE_DIRS})
 
 # Dependency management
@@ -54,21 +54,6 @@ add_executable(app
               src/main.cpp)
 target_link_libraries(app PRIVATE core_engine)
 
- add_executable(boost_server src/boost_server.cpp)
-target_link_libraries(boost_server
-                    PRIVATE
-                    Boost::filesystem
-                    Boost::thread
-                    Boost::program_options
-                    Boost::headers)
-
-add_executable(boost_client src/boost_client.cpp)
-target_link_libraries(boost_client
-                    PRIVATE
-                    Boost::filesystem
-                    Boost::thread
-                    Boost::program_options
-                    Boost::headers)
 # Build tests
 enable_testing()
 add_executable(testorderbook 

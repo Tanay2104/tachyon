@@ -24,17 +24,17 @@ void OrderBook::add(ClientRequest& incoming) {
   allocateSlot(incoming);
   if (incoming.new_order.side == Side::BID) {
     bids[book_price].push_back(
-        arena[arena_idx[incoming.new_order.order_id]].clr);
+        arena[arena_idx.get(incoming.new_order.order_id)].clr);
     intrusive_list<ClientRequest>::iterator it = bids[book_price].end();
     it--;
-    list_idx[incoming.new_order.order_id] = {Side::BID, book_price, it};
+    list_idx.insert(incoming.new_order.order_id, {Side::BID, book_price, it});
   } else {
     asks[book_price].push_back(
-        arena[arena_idx[incoming.new_order.order_id]].clr);
+        arena[arena_idx.get(incoming.new_order.order_id)].clr);
 
     intrusive_list<ClientRequest>::iterator it = asks[book_price].end();
     it--;
-    list_idx[incoming.new_order.order_id] = {Side::ASK, book_price, it};
+    list_idx.insert(incoming.new_order.order_id, {Side::ASK, book_price, it});
   }
 }
 
@@ -58,33 +58,33 @@ auto OrderBook::cancelOrder(OrderId order_id, ClientRequest& to_cancel)
   if (!list_idx.contains(order_id)) {
     return false;
   }
-  auto [side, price, it] = list_idx[order_id];
+  auto [side, price, it] = list_idx.get(order_id);
 
   if (side == Side::BID) {
     if ((bids[price].size() == 0) || (it == bids[price].end())) {
       // Corrupted state. idx exists but not in list.
-      list_idx.erase(order_id);
+      list_idx.remove(order_id);
       return false;
     }
     to_cancel = *it;
     bids[price].remove(it);
-    freeSlot(arena_idx[order_id]);  // Free a slot.
-    arena_idx.erase(order_id);      // Also erase it's map.
-    list_idx.erase(order_id);
+    freeSlot(arena_idx.get(order_id));  // Free a slot.
+    arena_idx.remove(order_id);         // Also erase it's map.
+    list_idx.remove(order_id);
     return true;
   }
   if (side == Side::ASK) {
     if ((asks[price].size() == 0) || (it == asks[price].end())) {
       // Corrupted state. idx exists but not in list.
-      list_idx.erase(order_id);
+      list_idx.remove(order_id);
       return false;
     }
 
     to_cancel = *it;
     asks[price].remove(it);
-    freeSlot(arena_idx[order_id]);  // Free a slot.
-    arena_idx.erase(order_id);      // Also erase it's map.
-    list_idx.erase(order_id);
+    freeSlot(arena_idx.get(order_id));  // Free a slot.
+    arena_idx.remove(order_id);         // Also erase it's map.
+    list_idx.remove(order_id);
     return true;
   }
   return false;
@@ -103,7 +103,7 @@ auto OrderBook::allocateSlot(const ClientRequest& incoming) -> uint32_t {
   }
   arena[idx].clr = incoming;
   arena[idx].is_active = true;
-  arena_idx[incoming.new_order.order_id] = idx;
+  arena_idx.insert(incoming.new_order.order_id, idx);
 
   return idx;
 }

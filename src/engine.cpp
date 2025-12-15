@@ -16,7 +16,7 @@
 
 extern std::atomic<bool> start_exchange;
 extern std::atomic<bool> keep_running;
-
+uint64_t batch_size = 100000;
 Engine::Engine(threadsafe::stl_queue<ClientRequest>& ev_q,
                threadsafe::stl_queue<Trade>& trades_queue,
                threadsafe::stl_queue<ExecutionReport>& exec_report,
@@ -155,7 +155,7 @@ void Engine::logSelfTrade(ClientRequest& incoming) {
   execution_reports.push(report);
 }
 
-void Engine::handle_GTC_LIMIT(ClientRequest& incoming) {
+void Engine::handle_GTC_LIMIT(ClientRequest& incoming, TimeStamp now) {
   trades_buffer.clear();
   orderbook.match(incoming,
                   trades_buffer);  // incoming must be passed by reference.
@@ -163,27 +163,29 @@ void Engine::handle_GTC_LIMIT(ClientRequest& incoming) {
     orderbook.add(incoming);  // Some quantity was left so we add to order book.
   }
   for (auto [trade, resting] : trades_buffer) {
+    trade.time_stamp = now;
     trades_queue.push(trade);  // Maybe we don't need it. Let's see.
     logTrade(resting, incoming, trade.quantity);
   }
 }
 
-void Engine::handle_GTC_MARKET(ClientRequest& incoming) {
+void Engine::handle_GTC_MARKET(ClientRequest& incoming, TimeStamp now) {
   logInvalidOrder(incoming);
 }
 
-void Engine::handle_IOC_LIMIT(ClientRequest& incoming) {
+void Engine::handle_IOC_LIMIT(ClientRequest& incoming, TimeStamp now) {
   trades_buffer.clear();
   orderbook.match(incoming, trades_buffer);
   // NOTE: since this is IOC order, we do NOT pass add it irrespective of
   // remaining quantity.
   for (auto [trade, resting] : trades_buffer) {
+    trade.time_stamp = now;
     trades_queue.push(trade);  // Maybe we don't need it. Let's see.
     logTrade(resting, incoming, trade.quantity);
   }
 }
 
-void Engine::handle_IOC_MARKET(ClientRequest& incoming) {
+void Engine::handle_IOC_MARKET(ClientRequest& incoming, TimeStamp now) {
   if (incoming.new_order.side == Side::ASK) {  // We set price to zero.
     incoming.new_order.price =
         (CLIENT_BASE_PRICE) +
@@ -196,11 +198,15 @@ void Engine::handle_IOC_MARKET(ClientRequest& incoming) {
   // NOTE: since this is IOC order, we do NOT pass add it irrespective of
   // remaining quantity.
   for (auto [trade, resting] : trades_buffer) {
+    trade.time_stamp = now;
     trades_queue.push(trade);  // Maybe we don't need it. Let's see.
     logTrade(resting, incoming, trade.quantity);
   }
 }
 
+// TODO: right now the execution reports logging is not correct.
+// Takers have zero remaining quantity. this is because of reference at end.
+// pass trade quantity and init quanity or their difference.
 void Engine::handleEvents() {
   while (!start_exchange.load(std::memory_order_acquire)) {
     std::this_thread::yield();
@@ -210,7 +216,16 @@ void Engine::handleEvents() {
   uint64_t processed_events_count = 0;
   // NOTE: Only GTC LIMIT handlers exist now.
   while (keep_running.load(std::memory_order_relaxed)) {
-    if (event_queue.try_pop(incoming)) {
+    std::deque<ClientRequest> batch;
+    event_queue.pop_all(batch);
+    if (batch.empty()) {
+      std::this_thread::yield();
+      continue;
+    }
+    TimeStamp now = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        std::chrono::steady_clock::now().time_since_epoch())
+                        .count();
+    for (ClientRequest& incoming : batch) {
       // printEvent(incoming); // For debugging only!
       processed_events.push(incoming);
       processed_events_count++;
@@ -226,16 +241,16 @@ void Engine::handleEvents() {
         logNewOrder(incoming);
         if (incoming.new_order.tif == TimeInForce::GTC) {
           if (incoming.new_order.order_type == OrderType::LIMIT) {
-            handle_GTC_LIMIT(incoming);
+            handle_GTC_LIMIT(incoming, now);
           } else if (incoming.new_order.order_type == OrderType::MARKET) {
             // Invalid order type. Handle properly.
-            handle_GTC_MARKET(incoming);
+            handle_GTC_MARKET(incoming, now);
           }
         } else if (incoming.new_order.tif == TimeInForce::IOC) {
           if (incoming.new_order.order_type == OrderType::LIMIT) {
-            handle_IOC_LIMIT(incoming);
+            handle_IOC_LIMIT(incoming, now);
           } else if (incoming.new_order.order_type == OrderType::MARKET) {
-            handle_IOC_MARKET(incoming);
+            handle_IOC_MARKET(incoming, now);
           }
         }
       } else if (incoming.type == RequestType::Cancel) {
@@ -247,5 +262,6 @@ void Engine::handleEvents() {
         }
       }
     }
+    batch.clear();
   }
 }

@@ -112,7 +112,7 @@ auto deserialise_trade(const uint8_t* buffer) -> Trade {
   return trade;
 }
 
-auto serialize_order_cancel(ClientId client_id, OrderId order_id,
+auto serialise_order_cancel(ClientId client_id, OrderId order_id,
                             uint8_t* buffer) -> size_t {
   buffer[0] = static_cast<uint8_t>(MessageType::ORDER_CANCEL);
 
@@ -122,7 +122,7 @@ auto serialize_order_cancel(ClientId client_id, OrderId order_id,
   return 13;
 }
 
-auto deserialize_order_cancel(const uint8_t* buffer)
+auto deserialise_order_cancel(const uint8_t* buffer)
     -> std::pair<ClientId, OrderId> {
   ClientId client_id;
   OrderId order_id;

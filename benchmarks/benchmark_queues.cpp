@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "containers/lock_queue.hpp"
+#include "containers/sharded_queue.hpp"
 #include "engine/orderbook.hpp"
 #include "engine/types.hpp"
 // ----------------------------------------------------------------------------
@@ -30,6 +31,22 @@ static void BM_LockSTLQueue_Throughput(benchmark::State& state) {
 }
 BENCHMARK(BM_LockSTLQueue_Throughput);
 
+static void BM_ShardedQueue_Throughput(benchmark::State& state) {
+  threadsafe::sharded_queue<int> q;
+  const int BATCH = 1000;
+
+  for (auto _ : state) {
+    for (int i = 0; i < BATCH; ++i) {
+      q.push(i);
+    }
+    for (int i = 0; i < BATCH; ++i) {
+      int val;
+      q.try_pop(val);
+    }
+  }
+  state.SetItemsProcessed(state.iterations() * BATCH * 2);
+}
+BENCHMARK(BM_ShardedQueue_Throughput);
 // ----------------------------------------------------------------------------
 // BENCHMARK: Multi-Thread Contention (Producer vs Consumer)
 // ----------------------------------------------------------------------------

@@ -29,6 +29,7 @@ class Client {
   std::uniform_int_distribution<int> distrib;
   std::uniform_int_distribution<int> distrib_bool;
 
+  static std::atomic<Price> global_fair_price;
   void readTrades();  // Can be used by trader to improve strategy.
   void placeOrder(const Order& order);  // Runs as background thread and Calls
                                         // gateway.placeOrder()

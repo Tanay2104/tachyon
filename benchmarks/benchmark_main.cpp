@@ -9,9 +9,9 @@
 #include <vector>
 
 #include "containers/lock_queue.hpp"
+#include "engine/constants.hpp"
 #include "engine/orderbook.hpp"
 #include "engine/types.hpp"
-#include "engine/constants.hpp"
 // ============================================================================
 // 1. Data Generation Helpers
 // ============================================================================
@@ -85,7 +85,7 @@ static void BM_OrderBook_Add(benchmark::State& state) {
   }
   state.SetItemsProcessed(state.iterations() * N);
 }
-BENCHMARK(BM_OrderBook_Add)->Range(1024, 8 << 10);
+BENCHMARK(BM_OrderBook_Add)->Range(1024, 8 << 11);
 
 // ----------------------------------------------------------------------------
 // BENCHMARK: Canceling Orders
@@ -128,7 +128,7 @@ static void BM_OrderBook_Cancel(benchmark::State& state) {
   }
   state.SetItemsProcessed(state.iterations() * N);
 }
-BENCHMARK(BM_OrderBook_Cancel)->Range(1024, 8 << 10);
+BENCHMARK(BM_OrderBook_Cancel)->Range(1024, 8 << 11);
 
 // ----------------------------------------------------------------------------
 // BENCHMARK: Matching (Sweep)

@@ -169,12 +169,12 @@ TEST(OrderCancelSerialization, RoundTrip) {
   OrderId order_id = 0x0102030405060708ULL;
 
   uint8_t buffer[13]{};
-  const size_t written = serialize_order_cancel(client_id, order_id, buffer);
+  const size_t written = serialise_order_cancel(client_id, order_id, buffer);
 
   EXPECT_EQ(written, 13);
   EXPECT_EQ(buffer[0], static_cast<uint8_t>(MessageType::ORDER_CANCEL));
 
-  auto [decoded_client, decoded_order] = deserialize_order_cancel(buffer);
+  auto [decoded_client, decoded_order] = deserialise_order_cancel(buffer);
 
   EXPECT_EQ(decoded_client, client_id);
   EXPECT_EQ(decoded_order, order_id);

@@ -27,18 +27,18 @@ class Engine {
   void logSelfTrade(ClientRequest& incoming);  // User tried self trade
   void logInvalidOrder(ClientRequest& incoming);
   void logNewOrder(ClientRequest& incoming);     // New order logged
-  void logCancelOrder(ClientRequest &incoming);  // Cancellation successful.
+  void logCancelOrder(ClientRequest& incoming);  // Cancellation successful.
   void logTrade(
       ClientRequest& resting, ClientRequest& incoming,
       Quantity trade_quantity);  // Trade has happened, send report to both.
 
   //  Helper functions to handle proper routing to matching function.
-  void handle_GTC_LIMIT(ClientRequest& incoming);
+  void handle_GTC_LIMIT(ClientRequest& incoming, TimeStamp now);
   // GTC MARKET not offered. The below function is for handling the
   // execution report only, not matching.
-  void handle_GTC_MARKET(ClientRequest& incoming);
-  void handle_IOC_LIMIT(ClientRequest& incoming);
-  void handle_IOC_MARKET(ClientRequest& incoming);
+  void handle_GTC_MARKET(ClientRequest& incoming, TimeStamp now);
+  void handle_IOC_LIMIT(ClientRequest& incoming, TimeStamp now);
+  void handle_IOC_MARKET(ClientRequest& incoming, TimeStamp now);
 
   // Helper function for writing logs to disk.
   void writeLogs();
