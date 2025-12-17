@@ -8,7 +8,6 @@
 #include <stdexcept>
 #include <vector>
 
-#include "engine/client.hpp"
 #include "engine/types.hpp"
 
 void OrderBook::add(ClientRequest& incoming) {

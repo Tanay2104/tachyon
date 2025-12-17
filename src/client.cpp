@@ -1,242 +1,271 @@
-#include "engine/client.hpp"
+#include "network/client.hpp"
 
-#include <boost/asio.hpp>
-#include <boost/asio/io_context.hpp>
+#include <arpa/inet.h>
+#include <asm-generic/socket.h>
+#include <endian.h>
+#include <err.h>
+#include <fcntl.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <sys/epoll.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+#include <algorithm>
+#include <atomic>
+#include <cerrno>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
-#include <format>
-#include <fstream>
-#include <random>
+#include <cstdio>
+#include <cstring>
+#include <iostream>
+#include <mutex>
+#include <ranges>
+#include <stdexcept>
+#include <string>
+#include <thread>
 
-#include "containers/lock_queue.hpp"
 #include "engine/constants.hpp"
-#include "engine/gateway.hpp"
 #include "engine/types.hpp"
-
-using boost::asio::ip::tcp;
-
-// NOTE: currently pricing true cost at 100. People randomly select any number
-// between 105 and 95.
-extern std::atomic<bool> keep_running;
-extern std::atomic<bool> start_exchange;
-
-std::atomic<Price> Client::global_fair_price(CLIENT_BASE_PRICE);
-Client::Client(ClientId my_id, GateWay& gtway,
-               threadsafe::stl_queue<Trade>& trades_queue)
-    : my_id(my_id),
-      gateway(gtway),
-      trades_queue(trades_queue),
-      gen(std::random_device{}()),
-      distrib(CLIENT_PRICE_DISTRIB_MIN, CLIENT_PRICE_DISTRIB_MAX),
-      distrib_bool(0, 1) {
-  this->local_order_id = 1;  // Otherwise cancellaiton one can give problems.
-  std::ofstream file;
-  std::string filename =
-      std::format("logs/execution_reports_client_{}.txt", my_id);
-  file.open(filename, std::ios::out);
-  file << "Execution Reports for Client " << my_id << "\n";
+#include "network/serialise.hpp"
+Client::Client()
+    : generator(std::random_device{}()), distribution(CLIENT_BASE_PRICE, 5000) {
+  rx_buffer.reserve(1024);
+  tx_buffer.reserve(1024);
 }
 
-Client::~Client() { writeExecutionReport(); }
+void Client::init(std::string host, std::string port) {
+  struct addrinfo hints;
+  struct addrinfo* servinfo;
+  struct addrinfo* ptr;
+  memset(&hints, 0, sizeof hints);
+  hints.ai_family = AF_UNSPEC;
+  hints.ai_socktype = SOCK_STREAM;
 
-// I understand this is a very bad method for order generation. But I just want
-// to test now.
-// TODO: add cancellation facility.
-/* auto Client::generateOrder() -> Order {
-  Order order;
-  order.order_id =
-      (static_cast<uint64_t>(my_id) << LOCAL_ORDER_BITS | local_order_id++);
-  order.price = (CLIENT_BASE_PRICE) + distrib(gen);
-  order.quantity = CLIENT_BASE_QUANTITY + distrib(gen);
-  int r_int_side = distrib_bool(gen);
-  int r_int_order_type = distrib_bool(gen);
-  int r_int_tif = distrib_bool(gen);
-  order.side = static_cast<Side>(r_int_side);
-  order.order_type = static_cast<OrderType>(r_int_order_type);
-  order.tif = static_cast<TimeInForce>(r_int_tif);
-
-  return order;
-} */
-auto Client::generateOrder() -> Order {
-  Order order;
-
-  // 1. Unique ID Generation (Keep your existing logic)
-  order.order_id =
-      (static_cast<uint64_t>(my_id) << LOCAL_ORDER_BITS | local_order_id++);
-
-  // 2. Simulate Market Movement (Random Walk)
-  // Every time a client wakes up, they nudge the market slightly.
-  // Using a small range (-5 to +5 ticks) prevents wild jumps.
-  // Note: In a real simulation, you'd use a Geometric Brownian Motion or
-  // Ornstein-Uhlenbeck process, but a simple clamped random walk is fine for
-  // systems testing.
-  int walk_step = (distrib(gen) % 11) - 5;  // Range -5 to +5
-  Price current_fair =
-      global_fair_price.fetch_add(walk_step, std::memory_order_relaxed);
-
-  // Bound the price so it doesn't go negative or overflow
-  if (current_fair < (CLIENT_BASE_PRICE + CLIENT_PRICE_DISTRIB_MIN)) {
-    global_fair_price.store(CLIENT_BASE_PRICE + CLIENT_PRICE_DISTRIB_MIN);
-    current_fair = CLIENT_BASE_PRICE + CLIENT_PRICE_DISTRIB_MIN;
+  int return_value = getaddrinfo(host.data(), port.data(), &hints, &servinfo);
+  if (return_value != 0) {
+    fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(return_value));
+    throw std::runtime_error("Error getting address info");
   }
-  if (current_fair > (CLIENT_BASE_PRICE + CLIENT_PRICE_DISTRIB_MAX)) {
-    global_fair_price.store(CLIENT_BASE_PRICE + CLIENT_PRICE_DISTRIB_MAX);
-    current_fair = CLIENT_BASE_PRICE + CLIENT_PRICE_DISTRIB_MAX;
-  }
-
-  // 3. Determine Side
-  int r_int_side = distrib_bool(gen);
-  order.side = static_cast<Side>(r_int_side);
-
-  // 4. THE FIX: Maker vs Taker Logic
-  // 80% of orders should be PASSIVE (Maker) - Adding Liquidity
-  // 20% of orders should be AGGRESSIVE (Taker) - Removing Liquidity
-  bool is_maker = (distrib(gen) % 100) < 60;
-
-  // Spread calculation: How far from fair price?
-  // Makers: Place away from center (Bid Low, Sell High)
-  // Takers: Place across center (Bid High, Sell Low)
-  int spread = (distrib(gen) % 50) + 10;  // Spread between 10 and 60 ticks
-
-  if (is_maker) {
-    if (order.side == Side::BID) {
-      order.price = current_fair - spread;  // Bid BELOW fair price
-    } else {
-      order.price = current_fair + spread;  // Ask ABOVE fair price
+  // loop through results and bind to firs active one.
+  for (ptr = servinfo; ptr != nullptr; ptr = ptr->ai_next) {
+    sockfd = socket(ptr->ai_family, ptr->ai_socktype, ptr->ai_protocol);
+    if (sockfd == -1) {
+      perror("server: socket");
+      continue;
     }
-  } else {
-    // Aggressive Taker (Cross the spread to ensure execution)
-    if (order.side == Side::BID) {
-      order.price = current_fair + spread;  // Pay MORE to buy now
-    } else {
-      order.price = current_fair - spread;  // Accept LESS to sell now
+    if (connect(sockfd, ptr->ai_addr, ptr->ai_addrlen) == -1) {
+      perror("client: connect");
+      continue;
     }
-  }
-  if (order.price > (CLIENT_BASE_PRICE + CLIENT_PRICE_DISTRIB_MAX)) {
-    order.price = (CLIENT_BASE_PRICE + CLIENT_PRICE_DISTRIB_MAX);
-  }
-  if (order.price < (CLIENT_BASE_PRICE + CLIENT_PRICE_DISTRIB_MIN)) {
-    order.price = (CLIENT_BASE_PRICE + CLIENT_PRICE_DISTRIB_MIN);
+    break;  // we potentially found our socket.
   }
 
-  // 5. Quantity & Type
-  order.quantity = CLIENT_BASE_QUANTITY + (distrib(gen) % 1000);
-  order.order_type = OrderType::LIMIT;
-  order.tif = TimeInForce::GTC;
+  if (ptr == nullptr) {
+    fprintf(stderr, "client: failed to connect\n");
+    throw std::runtime_error("Could not connect");
+  }
 
-  return order;
+  int flags = fcntl(sockfd, F_GETFL, 0);
+  fcntl(sockfd, F_SETFL, flags | O_NONBLOCK);
+  std::cout << "Client connected to server\n";
+  freeaddrinfo(servinfo);
 }
-void Client::run() {
-  while (!start_exchange.load(std::memory_order_acquire)) {
-    // TODO: learn what memory_order_acquire actually i
-    std::this_thread::yield();
+auto Client::flushBuffer() -> bool {
+  if (tx_buffer.empty()) {
+    return true;
   }
-  while (keep_running.load(std::memory_order_relaxed)) {
-    /* size_t count = 0;
-    for (int i = 0; i < 10000; i++) {
-      count += distrib(gen) % 10000;
-    }  */ // Sleep for isn't accurate enough.
-    std::this_thread::sleep_for(std::chrono::microseconds(500));
-    gateway.addOrder(generateOrder(), my_id);
+  const uint8_t* data_ptr = tx_buffer.data() + tx_offset;
+  size_t remaining = tx_buffer.size() - tx_offset;
+
+  // non blocking send.
+  ssize_t sent = send(sockfd, data_ptr, remaining, MSG_DONTWAIT);
+
+  if (sent > 0) {
+    tx_offset = tx_offset += sent;
+  } else if (sent == -1) {
+    if (errno == EAGAIN || errno == EWOULDBLOCK) {
+      // kernel buffer full. stop trying.
+      return false;
+    }
+    // some other iisue. fix later.
+    return false;
+  }
+
+  if (tx_offset >= tx_buffer.size()) {
+    tx_buffer.clear();
+    tx_offset = 0;
+    return true;
+  }
+  return false;
+}
+void Client::updateEpoll(int epoll_fd, bool listen_for_write) {
+  struct epoll_event evt;
+  evt.data.fd = sockfd;
+  evt.events = EPOLLIN;
+  if (listen_for_write) {
+    evt.events |= EPOLLOUT;
+  }
+  epoll_ctl(epoll_fd, EPOLL_CTL_MOD, sockfd, &evt);
+}
+
+void Client::moveData() {
+  // recv -> rx_buffer -> deserialise -> exec reports queue -> used by
+  // strategist. tx_buffer -> flush.
+  // TODO: make some proper mechanism to close true loop
+
+  int epoll_fd = epoll_create1(0);
+  if (epoll_fd == -1) {
+    throw std::runtime_error("epoll_create1 failed");
+  }
+  struct epoll_event evt;
+  struct epoll_event events;
+  evt.events = EPOLLIN;
+  evt.data.fd = sockfd;
+
+  if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, sockfd, &evt) == -1) {
+    throw std::runtime_error("epoll_ctl: sockfd");
+  }
+  std::cout << "Client loop started\n";
+  while (true) {
+    int n_ready_fd = epoll_wait(epoll_fd, &events, 1, 1);
+    if (n_ready_fd == -1) {
+      perror("epoll_wait");
+      break;
+    }
+    // Now we handle transmit.
+    uint8_t serialise_buf[64];
+    int pops = 0;
+    Order order;
+    while (pops < 100 && orders_to_place.try_pop(order)) {
+      size_t len = serialise_order(order, serialise_buf);
+      tx_buffer.insert(tx_buffer.end(), serialise_buf, serialise_buf + len);
+    }
+    pops = 0;
+    OrderId to_cancel;
+    while (pops < 100 && cancels_to_place.try_pop(to_cancel)) {
+      size_t len = serialise_order_cancel(to_cancel, serialise_buf);
+      tx_buffer.insert(tx_buffer.end(), serialise_buf, serialise_buf + len);
+    }
+
+    bool all_sent = flushBuffer();
+    // First we handle recieves.
+
+    if (!all_sent) {
+      // we have data stuck in tx buffer.
+      // So we need to listen for when we can write again.
+      updateEpoll(epoll_fd, true);
+    } else {
+      updateEpoll(epoll_fd, false);
+    }
+
+    int timeout = (orders_to_place.empty() && cancels_to_place.empty()) ? 1 : 0;
+
+    n_ready_fd = epoll_wait(epoll_fd, &events, 1, timeout);
+    if (n_ready_fd > 0) {
+      if (bool(events.events & EPOLLIN)) {  // it is a read event.
+        uint8_t temp_buff[MAX_TEMP_BUF_SIZE];
+        ssize_t bytes_read =
+            recv(events.data.fd, temp_buff, sizeof(temp_buff), 0);
+
+        if (bytes_read <= 0) {
+          if (bytes_read < 0 && errno == EAGAIN) {
+            // spurious wakeup?
+            //
+          } else {
+            std::cout << "Server disconnected.\n";
+            close(events.data.fd);
+            return;
+          }
+        }
+        rx_buffer.insert(rx_buffer.end(), temp_buff, temp_buff + bytes_read);
+        // drain as many full messages as possible.
+        drainRx();
+
+        // Read Write cycle complete!!!
+      }
+      if (bool(events.events & EPOLLOUT)) {
+        // we can write again now.
+        flushBuffer();
+      }
+    }
+  }
+}
+
+void Client::drainRx() {
+  while (rx_buffer.size() > 0) {
+    uint8_t msg_type = rx_buffer[0];
+    uint32_t expected_len = 0;
+
+    if (msg_type == static_cast<uint8_t>(MessageType::LOGIN_RESPONSE)) {
+      expected_len = 5;  //  1 + 4 for client.
+    }
+    // TODO: there should be a feature for occur once only events right? Look
+    // that up?
+    else if (msg_type == static_cast<uint8_t>(MessageType::EXEC_REPORT)) {
+      expected_len = 1 + sizeof(ExecutionReport);
+    } else {
+      // invalid data.
+      // Should we do anything.
+      // i guess not.
+      break;
+    }
+    if (rx_buffer.size() < expected_len) {
+      break;
+    }
+    // full message available!.
+    uint8_t* msg_start = rx_buffer.data();
+    if (msg_type == static_cast<uint8_t>(MessageType::LOGIN_RESPONSE)) {
+      uint32_t net_id;
+      std::memcpy(&net_id, &msg_start[1], 4);
+      my_id = be32toh(net_id);
+    }
+
+    else if (msg_type == static_cast<uint8_t>(MessageType::EXEC_REPORT)) {
+      ExecutionReport exec_report;
+      deserialise_execution_report(msg_start, exec_report);
+      reports.push(exec_report);  // thread safe queue.
+    }
+    // erase old data.
+    rx_buffer.erase(rx_buffer.begin(), rx_buffer.begin() + expected_len);
+  }
+}
+
+void Client::generateOrders() {
+  // TODO: add some better methods to break the loop maybe?
+
+  // NOTE: we are currenlty not using any market data or strategy.
+  // These are to be added later.
+  while (true) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    orders_to_place.push(generateOrderHelper());
     if (local_order_id % (ORDER_CANCELLATION_FREQ) == 0) {
       OrderId to_delete = local_order_id - (rand() % (ORDER_CANCELLATION_FREQ));
-      gateway.cancelOrder((my_id << (LOCAL_ORDER_BITS) | to_delete), my_id);
-    }
-    if (reports.size() >= MAX_EXECUTION_REPORTS_SIZE) {
-      writeExecutionReport();  // Clients duty to write execution reports.
+      cancels_to_place.push((my_id << (LOCAL_ORDER_BITS) | to_delete));
     }
   }
 }
 
-void Client::readTrades() {
-  while (true) {
-  }
+auto Client::generateOrderHelper() -> Order {
+  Order order;
+  order.order_id =
+      (static_cast<uint64_t>(my_id) << LOCAL_ORDER_BITS | local_order_id++);
+  // We use random walk.
+  // clients are fast enough so rand doesn't matter much.
+  order.price = Price(distribution(generator));
+  order.price = std::max<Price>(
+      order.price, Price(CLIENT_BASE_PRICE + CLIENT_PRICE_DISTRIB_MIN));
+
+  order.price = std::min<Price>(
+      order.price, Price(CLIENT_BASE_PRICE + CLIENT_PRICE_DISTRIB_MAX));
+  order.quantity =
+      CLIENT_BASE_QUANTITY + (Quantity(distribution(generator)) % 10000);
+
+  order.side = static_cast<Side>(rand() % 2);
+  order.order_type = OrderType::LIMIT;
+  order.tif = TimeInForce::GTC;
+  return order;
 }
-
-void Client::addReport(ExecutionReport exec_report) {
-  std::lock_guard<std::mutex> lock(report_mutex);
-  reports.push_back(exec_report);
-}
-
-void Client::writeExecutionReport() {
-  std::ofstream file;
-  std::string filename =
-      std::format("logs/execution_reports_client_{}.txt", my_id);
-  file.open(filename, std::ios::app);
-  std::lock_guard<std::mutex> lock(report_mutex);
-  for (auto report : reports) {
-    file << "CLIENT " << report.client_id << " "
-         << "ORDER ID " << report.order_id << " "
-         << "PRICE " << report.price << " "
-         << "LAST QUANTITY " << report.last_quantity << " "
-         << "REMAINING QUANTITY " << report.remaining_quantity << " "
-         << (report.side == Side::BID ? "BUY " : "SELL ") << "EXEC TYPE ";
-    switch (report.type) {
-      case ExecType::NEW:
-        file << "NEW ";
-        break;
-      case ExecType::CANCELED:
-        file << "CANCELED ";
-        break;
-      case ExecType::REJECTED:
-        file << "REJECTED - ";
-        switch (report.reason) {
-          case RejectReason::NONE:
-            file << "NONE ";
-            break;
-          case RejectReason::ORDER_NOT_FOUND:
-            file << "ORDER_NOT_FOUND ";
-            break;
-          case RejectReason::PRICE_INVALID:
-            file << "PRICE_INVALID ";
-            break;
-          case RejectReason::QUANTITY_INVALID:
-            file << "QUANTITY_INVALID ";
-            break;
-          case RejectReason::MARKET_CLOSED:
-            file << "MARKET_CLOSED ";
-            break;
-          case RejectReason::SELF_TRADE:
-            file << "SELF_TRADE ";
-            break;
-          case RejectReason::INVALID_ORDER_TYPE:
-            file << "INVALID_ORDER_TYPE ";
-            break;
-        }
-        break;
-      case ExecType::TRADE:
-        file << "TRADE ";
-        break;
-      case ExecType::EXPIRED:
-        file << "EXPIRED ";
-        break;
-    }
-    file << "\n";
-  }
-  file.close();
-  reports.clear();
-}
-
-/* auto main(int argc, char* argv[]) -> int {
-  try {
-    if (argc != 3) {
-      std::cerr << "Usage ./client <host> <port>\n";
-      return 1;
-    }
-
-    // Connecting to server.
-    boost::asio::io_context io_context;
-    tcp::resolver resolver(io_context);
-    tcp::resolver::results_type endpoints = resolver.resolve(argv[1], argv[2]);
-    tcp::socket socket(io_context);
-    boost::asio::connect(socket, endpoints);
-
-    while (true) { // TODO: add something to close the clients.
-
-    }
-
-
-  } catch (std::exception& e) {
-    std::cerr << e.what() << "\n";
-  }
-} */

@@ -56,6 +56,7 @@ void TcpServer::init(
 
   int return_value = getaddrinfo(nullptr, port.data(), &hints, &servinfo);
   if (return_value != 0) {
+    fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(return_value));
     throw std::runtime_error("Error getting address info");
   }
   // loop through results and bind to firs active one.
@@ -110,7 +111,7 @@ void TcpServer::receiveData() {
     throw std::runtime_error("epoll_ctl: listen_fd");
   }
   std::cout << "Engine event loop started\n";
-  // TODO: replace while true with atomic flag.
+
   while (keep_running.load()) {
     int n_ready_fds = epoll_wait(epoll_fd, events, MAX_EPOLL_EVENTS,
                                  -1);  // Partially blocking call..
@@ -139,7 +140,9 @@ void TcpServer::receiveData() {
           if (client_map.contains(conn->client_id)) {
             client_map.remove(conn->client_id);
           }
-          delete conn;
+          // NOTE: may release in heap use after free if deleted conn
+          // prematurely. So commented out for now. Memory leak will be there.
+          // delete conn;
           continue;
         }
 
@@ -181,8 +184,10 @@ void TcpServer::receiveData() {
 
           if (msg_type == static_cast<uint8_t>(MessageType::ORDER_NEW)) {
             handleNewOrder(msg_start, conn->client_id);
-          } else if (msg_type ==
-                     static_cast<uint8_t>(MessageType::ORDER_CANCEL)) {
+          }
+
+          else if (msg_type ==
+                   static_cast<uint8_t>(MessageType::ORDER_CANCEL)) {
             handleCancellation(msg_start, conn->client_id);
           }
           // nothing else should happen.
@@ -241,10 +246,10 @@ void TcpServer::handleNewOrder(uint8_t* buffer, ClientId cid) {
                        std::chrono::steady_clock::now().time_since_epoch())
                        .count();
   clr.new_order = order;
-  std::cout << "New Order placed with Order id = " << clr.new_order.order_id
+  /* std::cout << "New Order placed with Order id = " << clr.new_order.order_id
             << " client id: " << clr.client_id
             << " price : " << clr.new_order.price
-            << " quantity:  " << clr.new_order.quantity << "\n";
+            << " quantity:  " << clr.new_order.quantity << "\n"; */
   event_queue.push(clr);
 }
 
@@ -257,8 +262,8 @@ void TcpServer::handleCancellation(uint8_t* buffer, ClientId cid) {
   clr.time_stamp = std::chrono::duration_cast<std::chrono::nanoseconds>(
                        std::chrono::steady_clock::now().time_since_epoch())
                        .count();
-  std::cout << "Cancellation request for order id " << clr.order_id_to_cancel
-            << " placed by client id " << cid << std::endl;
+  // std::cout << "Cancellation request for order id " << clr.order_id_to_cancel
+  //   << " placed by client id " << cid << '\n';
   event_queue.push(clr);
 }
 

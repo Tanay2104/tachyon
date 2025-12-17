@@ -55,6 +55,12 @@ add_executable(tachyon
               src/main_tachyon.cpp)
 target_link_libraries(tachyon PRIVATE core_engine)
 
+
+# Building a client bot.
+add_executable(trader_bot
+              src/client.cpp
+              src/main_client.cpp)
+
 # Build tests
 enable_testing()
 add_executable(testorderbook 
