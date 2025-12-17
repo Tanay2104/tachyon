@@ -42,17 +42,18 @@ FetchContent_MakeAvailable(googlebenchmark)
 
 # Building the engine
 add_library(core_engine
-          src/client.cpp
+          # src/client.cpp
           src/engine.cpp
-          src/gateway.cpp
+          # src/gateway.cpp
           src/orderbook.cpp
           src/exchange.cpp
+          src/tcpserver.cpp
 )
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 # Building the main executable
-add_executable(app
-              src/main.cpp)
-target_link_libraries(app PRIVATE core_engine)
+add_executable(tachyon
+              src/main_tachyon.cpp)
+target_link_libraries(tachyon PRIVATE core_engine)
 
 # Build tests
 enable_testing()
@@ -83,7 +84,7 @@ add_executable(benchmarkorderbook
             # BENCHMARK FILE
             )
 add_executable(benchmarklockqueue
-            benchmarks/benchmark_lock_queues.cpp
+            benchmarks/benchmark_queues.cpp
           )
 add_executable(benchmarkintrusivelist
             benchmarks/benchmark_intrusive_list.cpp)

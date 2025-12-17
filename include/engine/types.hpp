@@ -37,8 +37,8 @@ enum class TimeInForce : uint8_t {
 // method to improve packing and performance.
 
 // The main order struct.
-struct Order {
-  OrderId order_id;      // 4 bytes
+struct __attribute__((packed)) Order {
+  OrderId order_id;      // 8 bytes
   Price price;           // 8 bytes
   Quantity quantity;     // 4 bytes
   Side side;             // 1 byte
@@ -80,7 +80,7 @@ enum class RejectReason : uint8_t {
 };
 
 // Execution report sent to the client regarding the order.
-struct ExecutionReport {
+struct __attribute__((packed)) ExecutionReport {
   ClientId client_id;
   OrderId order_id;
   Price price;                  // Last price filled or 0
@@ -95,7 +95,7 @@ struct ExecutionReport {
 // Anyways client can pull timestamp from public trades queue if they need it.
 
 // The internal data generated when a match happens.
-struct Trade {
+struct __attribute__((packed)) Trade {
   OrderId maker_order_id;  // ID of resting order.
   OrderId taker_order_id;  // ID of incoming order.
   TimeStamp time_stamp;

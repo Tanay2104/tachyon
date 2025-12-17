@@ -39,13 +39,13 @@ class lock_queue {
 
  public:
   // Constructor for queue
-  lock_queue<T>() {
+  lock_queue() {
     A = new T[INIT_SIZE];
     N = INIT_SIZE;
     head = tail = 0;
   }
 
-  lock_queue<T>(const lock_queue<T>& other) {
+  lock_queue(const lock_queue& other) {
     std::lock_guard<std::mutex> lg(other.mut);
     this->A = new T[other.N];
     this->N = other.N;
@@ -56,7 +56,7 @@ class lock_queue {
     this->tail = other.tail;
   }
 
-  ~lock_queue<T>() { delete[] A; }
+  ~lock_queue() { delete[] A; }
 
   bool empty() {
     std::lock_guard<std::mutex> lg(mut);

@@ -1,5 +1,6 @@
 #include <atomic>
 #include <chrono>
+#include <csignal>
 #include <cstdint>
 #include <engine/exchange.hpp>
 #include <ratio>
@@ -13,9 +14,9 @@ auto main() -> int {
   // The main entry point of our simulation.
   std::signal(SIGINT, signal_handler);
 
-  uint32_t duration = 100;  // Running duration in ms.
+  uint32_t duration = 500000;  // Running duration in ms.
   Exchange exchange;
-  exchange.addClients(4);
+  // exchange.addClients(4);
   exchange.init();
   auto start = std::chrono::steady_clock::now();
   exchange.run();

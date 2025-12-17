@@ -1,22 +1,12 @@
 #ifndef EXCHANGE_HPP
 #define EXCHANGE_HPP
 
-#include <atomic>
 #include <chrono>
-#include <csignal>
-#include <cstdint>
-#include <cstdlib>
-#include <deque>
-#include <fstream>
-#include <memory>
+#include <network/tcpserver.hpp>
 #include <thread>
-#include <vector>
 
 #include "containers/lock_queue.hpp"
-#include "engine/client.hpp"
-#include "engine/constants.hpp"
 #include "engine/engine.hpp"
-#include "engine/gateway.hpp"
 #include "engine/orderbook.hpp"
 #include "engine/types.hpp"
 
@@ -28,19 +18,21 @@ class Exchange {
   threadsafe::stl_queue<ExecutionReport> execution_report;
   // Key components.
   OrderBook orderbook;
-  GateWay gateway;
+  // GateWay gateway;
   Engine engine;
+  TcpServer tcpserver;
 
   // Clients.
-  int num_clients = 0;
-  std::deque<std::unique_ptr<Client>> clients;
-  std::deque<std::thread> client_threads;
+  // int num_clients = 0;
+  // std::deque<std::unique_ptr<Client>> clients;
+  // std::deque<std::thread> client_threads;
 
   // Threads.
   std::thread engine_event_handler;
   std::thread engine_event_log_writer;
   std::thread execution_report_dispatcher;
   std::thread trades_log_writer;
+  std::thread tcpserver_recieve;
 
   // Start time of Exchange.
   std::chrono::steady_clock::time_point start;
@@ -54,7 +46,7 @@ class Exchange {
   ~Exchange();
   void init();
   void stop();
-  void addClients(int num = NUM_DEFAULT_CLIENTS);
+  // void addClients(int num = NUM_DEFAULT_CLIENTS);
   void run();
 };
 

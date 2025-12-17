@@ -4,3 +4,4 @@ temp.txt
 build/
 logs/
 .cache
+__pycache__/

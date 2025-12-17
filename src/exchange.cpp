@@ -3,24 +3,29 @@
 #include <malloc.h>
 
 #include <chrono>
+#include <fstream>
 #include <thread>
 
 #include "engine/gateway.hpp"
+#include "network/tcpserver.hpp"
 
 std::atomic<bool> start_exchange(false);
 extern std ::atomic<bool> keep_running;
 Exchange::Exchange()
-    : gateway(event_queue, execution_report),
-      engine(event_queue, trades_queue, execution_report, orderbook) {}
+    : engine(event_queue, trades_queue, execution_report, orderbook),
+      tcpserver(event_queue, execution_report) {}
 
 void Exchange::init() {
+  tcpserver.init("12345");
   // Should automatically use std::move.
   engine_event_handler = std::thread(&Engine::handleEvents, &engine);
   engine_event_log_writer = std::thread(&Engine::writeLogsContinuous, &engine);
-  execution_report_dispatcher = std::thread(&GateWay::dispatcher, &gateway);
+  execution_report_dispatcher =
+      std::thread(&TcpServer::dispatchData, &tcpserver);
   trades_log_writer = std::thread(&Exchange::writeTradesContinuous, this);
+  tcpserver_recieve = std::thread(&TcpServer::receiveData, &tcpserver);
 
-  // Getting ready or later logging.
+  // Getting ready for later logging.
   std::ofstream file;
   // Writing trades.
   file.open("logs/processed_trades.txt", std::ios::out);
@@ -28,7 +33,7 @@ void Exchange::init() {
   file.close();
   std::cout << "Exchange initialised\n";
 }
-void Exchange::addClients(int num) {
+/* void Exchange::addClients(int num) {
   num_clients += num;
   for (int i = 1; i <= num; i++) {
     clients.push_back(std::make_unique<Client>(i, gateway, trades_queue));
@@ -36,7 +41,7 @@ void Exchange::addClients(int num) {
     client_threads.emplace_back(&Client::run, client_ptr);
     gateway.addClient(i, client_ptr);
   }
-}
+} */
 
 void Exchange::writeTrades() {
   std::ofstream file;
@@ -91,11 +96,12 @@ Exchange::~Exchange() {
 void Exchange::stop() {
   keep_running.store(false);
   std::cout << "Exchange has closed\n";
-  for (auto& client_order : client_threads) {
+  /* for (auto& client_order : client_threads) {
     client_order.join();  // Joining the clients.
-  }
+  } */
   engine_event_log_writer.join();
   engine_event_handler.join();
-  execution_report_dispatcher.join();
+  // execution_report_dispatcher.join();
   trades_log_writer.join();
+  tcpserver_recieve.join();
 }

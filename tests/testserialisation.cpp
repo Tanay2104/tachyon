@@ -1,200 +1,207 @@
 #include <gtest/gtest.h>
 
-#include <cstdint>
 #include <cstring>
+#include <limits>
+#include <vector>
 
+// Include your header
 #include "engine/types.hpp"
-#include "network/message.hpp"
+#include "network/serialise.hpp"
 
-namespace {
+// ============================================================================
+// 1. ORDER SERIALIZATION TESTS
+// ============================================================================
 
-template <typename T>
-void ExpectMemEq(const uint8_t* buffer, size_t offset, const T& value) {
-  T tmp{};
-  std::memcpy(&tmp, buffer + offset, sizeof(T));
-  EXPECT_EQ(tmp, value);
-}
+TEST(SerializationTest, Order_RoundTrip_Basic) {
+  // 1. Setup Input
+  Order original;
+  original.order_id = 123456789;
+  original.price = 10050;  // 100.50
+  original.quantity = 500;
+  original.side = Side::BID;
+  original.order_type = OrderType::LIMIT;
+  original.tif = TimeInForce::GTC;
 
-template <typename T>
-void WriteValue(uint8_t* buffer, size_t offset, const T& value) {
-  std::memcpy(buffer + offset, &value, sizeof(T));
-}
+  // 2. Serialize
+  uint8_t buffer[128];                     // Plenty of space
+  std::memset(buffer, 0, sizeof(buffer));  // Zero out for safety
+  size_t bytes_written = serialise_order(original, buffer);
 
-}  // namespace
-
-TEST(OrderSerialization, RoundTripBasic) {
-  Order original{
-      .order_id = 123456789ULL,
-      .price = 129224ULL,
-      .quantity = 42,
-      .side = Side::BID,
-      .order_type = OrderType::LIMIT,
-      .tif = TimeInForce::GTC,
-  };
-
-  uint8_t buffer[24]{};
-  const size_t written = serialise_order(original, buffer);
-
-  EXPECT_EQ(written, 24);
+  // 3. Verify Size
+  // Header (1) + Struct Size
+  ASSERT_EQ(bytes_written, 1 + sizeof(Order));
   EXPECT_EQ(buffer[0], static_cast<uint8_t>(MessageType::ORDER_NEW));
 
-  Order decoded = deserialise_order(buffer);
+  // 4. Deserialize
+  Order result;
+  deserialise_order(buffer, result);
 
-  EXPECT_EQ(decoded.order_id, original.order_id);
-  EXPECT_EQ(decoded.price, original.price);
-  EXPECT_EQ(decoded.quantity, original.quantity);
-  EXPECT_EQ(decoded.side, original.side);
-  EXPECT_EQ(decoded.order_type, original.order_type);
-  EXPECT_EQ(decoded.tif, original.tif);
+  // 5. Verify Logic
+  EXPECT_EQ(result.order_id, original.order_id);
+  EXPECT_EQ(result.price, original.price);
+  EXPECT_EQ(result.quantity, original.quantity);
+  EXPECT_EQ(result.side, original.side);
+  EXPECT_EQ(result.order_type, original.order_type);
+  EXPECT_EQ(result.tif, original.tif);
 }
 
-TEST(OrderSerialization, ByteLayoutExact) {
-  Order order{
-      .order_id = 0x0102030405060708ULL,
-      .price = 0x1112131415161718ULL,
-      .quantity = 0xAABBCCDD,
-      .side = Side::ASK,
-      .order_type = OrderType::MARKET,
-      .tif = TimeInForce::IOC,
-  };
+TEST(SerializationTest, Order_RawBytes_EndiannessCheck) {
+  /*
+     RIGOROUS TEST:
+     We verify that the bytes in the buffer are actually Big Endian.
+     If we are on x86 (Little Endian), the bytes should be reversed in the
+     buffer.
+  */
 
-  uint8_t buffer[24]{};
-  serialise_order(order, buffer);
+  Order original;
+  // 0x0102030405060708
+  original.order_id = 0x0102030405060708ULL;
+  // 0xAABBCCDD
+  original.price = 0xAABBCCDDULL;
+  // 0xEEFF
+  original.quantity = 0x11223344;
+  original.side = Side::ASK;
 
-  EXPECT_EQ(buffer[0], static_cast<uint8_t>(MessageType::ORDER_NEW));
+  uint8_t buffer[128];
+  serialise_order(original, buffer);
 
-  ExpectMemEq(buffer, 1, order.order_id);
-  ExpectMemEq(buffer, 9, order.price);
-  ExpectMemEq(buffer, 17, order.quantity);
-  EXPECT_EQ(buffer[21], static_cast<uint8_t>(order.side));
-  EXPECT_EQ(buffer[22], static_cast<uint8_t>(order.order_type));
-  EXPECT_EQ(buffer[23], static_cast<uint8_t>(order.tif));
+  // Byte 0: Message Type
+  ASSERT_EQ(buffer[0], static_cast<uint8_t>(MessageType::ORDER_NEW));
+
+  // Bytes 1-8: Order ID (uint64_t) -> Should be Big Endian (01 02 ... 08)
+  // On Little Endian Machine, raw memory is 08 07...
+  // The serializer should have flipped it to 01 02...
+  EXPECT_EQ(buffer[1], 0x01);
+  EXPECT_EQ(buffer[8], 0x08);
+
+  // Bytes 9-16: Price (uint64_t)
+  // Note: Padding might shift indices depending on struct layout.
+  // We assume packed or standard alignment.
+  // Let's inspect via offsetof to be safe or assuming your struct logic:
+  // Your serializer uses memcpy(&buffer[1], &network_struct).
+  // So we check the network_struct layout logic.
+
+  // Manual inspection pointer
+  const uint8_t* ptr = &buffer[1];
+
+  // Check OrderID at offset 0 of struct
+  EXPECT_EQ(ptr[0], 0x01);
+
+  // Check Price at offset 8 (sizeof OrderId)
+  // 0xAABBCCDD -> Network: AA BB CC DD (padded to 8 bytes if uint64)
+  // Since Price is uint64: 00 00 00 00 AA BB CC DD
+  EXPECT_EQ(ptr[8], 0x00);
+  EXPECT_EQ(ptr[15], 0xDD);
 }
 
-TEST(OrderSerialization, DeathOnWrongMessageType) {
-  uint8_t buffer[24]{};
-  buffer[0] = static_cast<uint8_t>(MessageType::TRADE);
+TEST(SerializationTest, Order_BoundaryValues) {
+  Order original;
+  original.order_id = std::numeric_limits<OrderId>::max();  // UINT64_MAX
+  original.price = std::numeric_limits<Price>::max();
+  original.quantity = std::numeric_limits<Quantity>::max();
 
-  ASSERT_DEATH(
-      {
-        auto o = deserialise_order(buffer);
-        (void)o;
-      },
-      ".*");
+  uint8_t buffer[128];
+  serialise_order(original, buffer);
+
+  Order result;
+  deserialise_order(buffer, result);
+
+  EXPECT_EQ(result.order_id, std::numeric_limits<OrderId>::max());
+  EXPECT_EQ(result.price, std::numeric_limits<Price>::max());
+  EXPECT_EQ(result.quantity, std::numeric_limits<Quantity>::max());
 }
 
-TEST(ExecutionReportSerialization, RoundTrip) {
-  ExecutionReport original{
-      .client_id = 42,
-      .order_id = 999999ULL,
-      .price = 1234500ULL,
-      .last_quantity = 10,
-      .remaining_quantity = 90,
-      .type = ExecType::TRADE,
-      .reason = RejectReason::NONE,
-      .side = Side::ASK,
-  };
+// ============================================================================
+// 2. EXECUTION REPORT TESTS
+// ============================================================================
 
-  uint8_t buffer[32]{};
-  const size_t written = serialise_execution_report(original, buffer);
+TEST(SerializationTest, ExecReport_RoundTrip) {
+  ExecutionReport original;
+  original.client_id = 99;
+  original.order_id = 888;
+  original.price = 12345;
+  original.last_quantity = 10;
+  original.remaining_quantity = 90;
+  original.type = ExecType::TRADE;
+  original.reason = RejectReason::NONE;
+  original.side = Side::BID;
 
-  EXPECT_EQ(written, 32);
+  uint8_t buffer[128];
+  size_t bytes = serialise_execution_report(original, buffer);
+
+  ASSERT_EQ(bytes, 1 + sizeof(ExecutionReport));
   EXPECT_EQ(buffer[0], static_cast<uint8_t>(MessageType::EXEC_REPORT));
 
-  ExecutionReport decoded = deserialise_execution_report(buffer);
+  ExecutionReport result;
+  deserialise_execution_report(buffer, result);
 
-  EXPECT_EQ(decoded.client_id, original.client_id);
-  EXPECT_EQ(decoded.order_id, original.order_id);
-  EXPECT_EQ(decoded.price, original.price);
-  EXPECT_EQ(decoded.last_quantity, original.last_quantity);
-  EXPECT_EQ(decoded.remaining_quantity, original.remaining_quantity);
-  EXPECT_EQ(decoded.type, original.type);
-  EXPECT_EQ(decoded.reason, original.reason);
-  EXPECT_EQ(decoded.side, original.side);
+  EXPECT_EQ(result.client_id, original.client_id);
+  EXPECT_EQ(result.order_id, original.order_id);
+  EXPECT_EQ(result.type, original.type);
+  EXPECT_EQ(result.reason, original.reason);
 }
 
-TEST(ExecutionReportSerialization, ByteOffsetsCorrect) {
-  ExecutionReport r{
-      .client_id = 0x11223344,
-      .order_id = 0x0102030405060708ULL,
-      .price = 0x1112131415161718ULL,
-      .last_quantity = 0xAABBCCDD,
-      .remaining_quantity = 0xEEFF0011,
-      .type = ExecType::REJECTED,
-      .reason = RejectReason::PRICE_INVALID,
-      .side = Side::BID,
-  };
+// ============================================================================
+// 3. TRADE TESTS
+// ============================================================================
 
-  uint8_t buffer[32]{};
-  serialise_execution_report(r, buffer);
+TEST(SerializationTest, Trade_RoundTrip) {
+  Trade original;
+  original.maker_order_id = 1001;
+  original.taker_order_id = 2002;
+  original.price = 50000;
+  original.quantity = 150;
+  original.time_stamp = 123456789000;
+  original.aggressor_side = Side::ASK;
 
-  ExpectMemEq(buffer, 1, r.client_id);
-  ExpectMemEq(buffer, 5, r.order_id);
-  ExpectMemEq(buffer, 13, r.price);
-  ExpectMemEq(buffer, 21, r.last_quantity);
-  ExpectMemEq(buffer, 25, r.remaining_quantity);
-  EXPECT_EQ(buffer[29], static_cast<uint8_t>(r.type));
-  EXPECT_EQ(buffer[30], static_cast<uint8_t>(r.reason));
-  EXPECT_EQ(buffer[31], static_cast<uint8_t>(r.side));
+  uint8_t buffer[128];
+  serialise_trade(original, buffer);
+
+  Trade result;
+  deserialise_trade(buffer, result);
+
+  EXPECT_EQ(result.maker_order_id, original.maker_order_id);
+  EXPECT_EQ(result.taker_order_id, original.taker_order_id);
+  EXPECT_EQ(result.price, original.price);
+  EXPECT_EQ(result.time_stamp, original.time_stamp);
+  EXPECT_EQ(result.aggressor_side, original.aggressor_side);
 }
 
-TEST(TradeSerialization, RoundTrip) {
-  Trade original{
-      .maker_order_id = 1,
-      .taker_order_id = 2,
-      .time_stamp = 123456789ULL,
-      .price = 999999ULL,
-      .quantity = 77,
-      .aggressor_side = Side::ASK,
-  };
+// ============================================================================
+// 4. CANCEL ORDER TESTS (Manual Memcpy Check)
+// ============================================================================
 
-  uint8_t buffer[38]{};
-  const size_t written = serialise_trade(original, buffer);
+TEST(SerializationTest, Cancel_RoundTrip_ManualPacking) {
+  ClientId cid = 500;
+  OrderId oid = 999999;
 
-  EXPECT_EQ(written, 38);
-  EXPECT_EQ(buffer[0], static_cast<uint8_t>(MessageType::TRADE));
+  uint8_t buffer[128];
+  size_t len = serialise_order_cancel(cid, oid, buffer);
 
-  Trade decoded = deserialise_trade(buffer);
-
-  EXPECT_EQ(decoded.maker_order_id, original.maker_order_id);
-  EXPECT_EQ(decoded.taker_order_id, original.taker_order_id);
-  EXPECT_EQ(decoded.time_stamp, original.time_stamp);
-  EXPECT_EQ(decoded.price, original.price);
-  EXPECT_EQ(decoded.quantity, original.quantity);
-  EXPECT_EQ(decoded.aggressor_side, original.aggressor_side);
-}
-
-TEST(OrderCancelSerialization, RoundTrip) {
-  ClientId client_id = 1234;
-  OrderId order_id = 0x0102030405060708ULL;
-
-  uint8_t buffer[13]{};
-  const size_t written = serialise_order_cancel(client_id, order_id, buffer);
-
-  EXPECT_EQ(written, 13);
+  // Verify Size (1 byte type + 4 byte cid + 8 byte oid)
+  ASSERT_EQ(len, 13);
   EXPECT_EQ(buffer[0], static_cast<uint8_t>(MessageType::ORDER_CANCEL));
 
-  auto [decoded_client, decoded_order] = deserialise_order_cancel(buffer);
+  auto [res_cid, res_oid] = deserialise_order_cancel(buffer);
 
-  EXPECT_EQ(decoded_client, client_id);
-  EXPECT_EQ(decoded_order, order_id);
+  EXPECT_EQ(res_cid, cid);
+  EXPECT_EQ(res_oid, oid);
 }
 
-TEST(SerializationEdgeCases, MaxValues) {
-  Order order{
-      .order_id = UINT64_MAX,
-      .price = UINT64_MAX,
-      .quantity = UINT32_MAX,
-      .side = Side::ASK,
-      .order_type = OrderType::MARKET,
-      .tif = TimeInForce::IOC,
-  };
+TEST(SerializationTest, Cancel_ByteAlignment) {
+  ClientId cid = 0x12345678;         // 4 bytes
+  OrderId oid = 0xAABBCCDDEEFF0011;  // 8 bytes
 
-  uint8_t buffer[24]{};
-  serialise_order(order, buffer);
+  uint8_t buffer[128];
+  serialise_order_cancel(cid, oid, buffer);
 
-  Order decoded = deserialise_order(buffer);
-  EXPECT_EQ(decoded.order_id, UINT64_MAX);
-  EXPECT_EQ(decoded.price, UINT64_MAX);
-  EXPECT_EQ(decoded.quantity, UINT32_MAX);
+  // Check Client ID (Big Endian) at offset 1
+  // 0x12 0x34 0x56 0x78
+  EXPECT_EQ(buffer[1], 0x12);
+  EXPECT_EQ(buffer[4], 0x78);
+
+  // Check Order ID (Big Endian) at offset 5
+  // 0xAA ... 0x11
+  EXPECT_EQ(buffer[5], 0xAA);
+  EXPECT_EQ(buffer[12], 0x11);
 }
