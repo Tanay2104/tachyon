@@ -172,36 +172,27 @@ TEST(SerializationTest, Trade_RoundTrip) {
 // ============================================================================
 
 TEST(SerializationTest, Cancel_RoundTrip_ManualPacking) {
-  ClientId cid = 500;
   OrderId oid = 999999;
 
   uint8_t buffer[128];
-  size_t len = serialise_order_cancel(cid, oid, buffer);
+  size_t len = serialise_order_cancel(oid, buffer);
 
   // Verify Size (1 byte type + 4 byte cid + 8 byte oid)
   ASSERT_EQ(len, 13);
   EXPECT_EQ(buffer[0], static_cast<uint8_t>(MessageType::ORDER_CANCEL));
 
-  auto [res_cid, res_oid] = deserialise_order_cancel(buffer);
+  OrderId res_oid = deserialise_order_cancel(buffer);
 
-  EXPECT_EQ(res_cid, cid);
   EXPECT_EQ(res_oid, oid);
 }
 
 TEST(SerializationTest, Cancel_ByteAlignment) {
-  ClientId cid = 0x12345678;         // 4 bytes
   OrderId oid = 0xAABBCCDDEEFF0011;  // 8 bytes
 
   uint8_t buffer[128];
-  serialise_order_cancel(cid, oid, buffer);
-
-  // Check Client ID (Big Endian) at offset 1
-  // 0x12 0x34 0x56 0x78
-  EXPECT_EQ(buffer[1], 0x12);
-  EXPECT_EQ(buffer[4], 0x78);
-
-  // Check Order ID (Big Endian) at offset 5
+  serialise_order_cancel(oid, buffer);
+  // Check Order ID (Big Endian) at offset 1
   // 0xAA ... 0x11
-  EXPECT_EQ(buffer[5], 0xAA);
-  EXPECT_EQ(buffer[12], 0x11);
+  EXPECT_EQ(buffer[1], 0xAA);
+  EXPECT_EQ(buffer[8], 0x11);
 }

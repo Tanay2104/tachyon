@@ -1,48 +1,55 @@
 #ifndef ORDER_BOOK_HPP
 #define ORDER_BOOK_HPP
 
+#include <concepts>
+#include <cstddef>
 #include <cstdint>
 #include <deque>
-#include <set>
-#include <unordered_map>
+#include <ranges>
 #include <vector>
 
 #include "containers/flat_hashmap.hpp"
 #include "containers/intrusive_list.hpp"
 #include "engine/constants.hpp"
+#include "engine/requires.hpp"
 #include "engine/types.hpp"
-class OrderBook {
- private:
+
+/*template <template <typename...> typename Heirarchy,
+          template <typename...> typename Level>
+  requires PriceLevelHierarchy<Heirarchy<Level<ClientRequest>>,
+                               Level<ClientRequest>> */
+template <TachyonConfig config> class OrderBook {
+private:
   // TODO: shift to a custom block allocater.
-  struct OrderSlot {  // NOTE: make sure ABA problem doesn't occur.
+  struct OrderSlot { // NOTE: make sure ABA problem doesn't occur.
 
     ClientRequest clr;
     bool is_active = false;
   };
-  std::deque<OrderSlot> arena;      // Our active orders live here.
-  std::vector<uint32_t> free_list;  // Acts as stack.
+  std::deque<OrderSlot> arena;     // Our active orders live here.
+  std::vector<uint32_t> free_list; // Acts as stack.
 
-  auto allocateSlot(const ClientRequest& incoming) -> uint32_t;
+  auto allocateSlot(const ClientRequest &incoming) -> uint32_t;
   void freeSlot(uint32_t idx);
   struct bids_cmp {
-    auto operator()(const ClientRequest& order_a,
-                    const ClientRequest& order_b) const -> bool {
+    auto operator()(const ClientRequest &order_a,
+                    const ClientRequest &order_b) const -> bool {
       if (order_a.new_order.price == order_b.new_order.price) {
         return order_a.time_stamp < order_b.time_stamp;
       }
       return (order_a.new_order.price >
-              order_b.new_order.price);  // Big with higher price comes first.
+              order_b.new_order.price); // Big with higher price comes first.
     }
   };
 
   struct asks_cmp {
-    auto operator()(const ClientRequest& order_a,
-                    const ClientRequest& order_b) const -> bool {
+    auto operator()(const ClientRequest &order_a,
+                    const ClientRequest &order_b) const -> bool {
       if (order_a.new_order.price == order_b.new_order.price) {
         return order_a.time_stamp < order_b.time_stamp;
       }
       return (order_a.new_order.price <
-              order_b.new_order.price);  // Big with higher price comes first.
+              order_b.new_order.price); // Big with higher price comes first.
     }
   };
 
@@ -54,12 +61,13 @@ class OrderBook {
                std::tuple<Side, Price,
                           intrusive_list<ClientRequest>::ListIterator<false>>>
       list_idx;
-  std::vector<intrusive_list<ClientRequest>> bids;
-  std::vector<intrusive_list<ClientRequest>> asks;
+  config::PriceLevelHierarchyType bids;
+  config::PriceLevelHierarchyType asks;
   template <typename BookType, typename CompareFunc>
-  void matchImplementation(
-      ClientRequest& incoming, BookType& book, CompareFunc priceCrosses,
-      std::vector<std::pair<Trade, ClientRequest>>& trades) {
+  void
+  matchImplementation(ClientRequest &incoming, BookType &book,
+                      CompareFunc priceCrosses,
+                      std::vector<std::pair<Trade, ClientRequest>> &trades) {
     Price book_price = 0;
     if (incoming.new_order.side == Side::BID) {
       while (book_price < book.size() && book[book_price].size() == 0) {
@@ -77,7 +85,7 @@ class OrderBook {
         book_price--;
       }
       if (book_price == -1) {
-        return;  // Underflow will happen.
+        return; // Underflow will happen.
       }
     }
     auto book_it = book[book_price].begin();
@@ -114,11 +122,10 @@ class OrderBook {
           freeSlot(arena_idx.get(book_it->new_order.order_id));
           arena_idx.remove(book_it->new_order.order_id);
           list_idx.remove(book_it->new_order.order_id);
-          book_it =
-              book[book_price].remove(book_it);  // remove finished orders.
+          book_it = book[book_price].remove(book_it); // remove finished orders.
 
         } else {
-          book_it++;  // Do we really need this?
+          book_it++; // Do we really need this?
         }
       }
       // Now orders at that price level are finished.
@@ -130,13 +137,13 @@ class OrderBook {
       if (book_price == std::numeric_limits<Price>::max() ||
           book_price >= book.size()) {
         // -1 didn't work because of underflow.
-        break;  // No further orders to sweep.
+        break; // No further orders to sweep.
       }
       book_it = book[book_price].begin();
     }
   }
 
- public:
+public:
   OrderBook()
       : bids(std::vector<intrusive_list<ClientRequest>>(
             uint32_t((CLIENT_PRICE_DISTRIB_MAX) - (CLIENT_PRICE_DISTRIB_MIN)) +
@@ -146,10 +153,10 @@ class OrderBook {
             1))
 
   {}
-  void add(ClientRequest& incoming);
-  void match(ClientRequest& incoming,
-             std::vector<std::pair<Trade, ClientRequest>>& trades);
-  auto cancelOrder(OrderId order_id, ClientRequest& to_cancel) -> bool;
+  void add(ClientRequest &incoming);
+  void match(ClientRequest &incoming,
+             std::vector<std::pair<Trade, ClientRequest>> &trades);
+  auto cancelOrder(OrderId order_id, ClientRequest &to_cancel) -> bool;
   auto size_asks() -> size_t;
   auto size_bids() -> size_t;
 };

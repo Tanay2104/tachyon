@@ -1,2 +1,16 @@
-Checks: '-*,readability-*,performance-*,bugprone-*,modernize-*,concurrency-*'
-WarningsAsErrors: '*'
+# .clang-tidy
+Checks: >
+  -*,
+  bugprone-*,
+  performance-*,
+  concurrency-*,
+  modernize-*,
+  cppcoreguidelines-*,
+  readability-*,
+  hicpp-signed-bitwise,
+  -modernize-use-trailing-return-type,    # Turn off the "weird" returns
+  -modernize-use-nodiscard,               # Optional: turn off if too noisy
+  -readability-magic-numbers,             # We use many constants in HFT
+  -cppcoreguidelines-pro-type-union-access # HFT uses unions for packet layouts
+
+WarningsAsErrors: 'performance-*,bugprone-*' # Treat performance bugs as errors

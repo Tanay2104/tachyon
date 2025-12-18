@@ -8,13 +8,15 @@
 #include <stdexcept>
 #include <vector>
 
+#include "engine/requires.hpp"
 #include "engine/types.hpp"
 
-void OrderBook::add(ClientRequest& incoming) {
+template <TachyonConfig config>
+void OrderBook<config>::add(ClientRequest &incoming) {
   // TODO: Make it return boolean for invalid orders?
   Price book_price =
       incoming.new_order.price - CLIENT_BASE_PRICE -
-      (CLIENT_PRICE_DISTRIB_MIN);  // price_distrib_min is negative.
+      (CLIENT_PRICE_DISTRIB_MIN); // price_distrib_min is negative.
   // NOTE: we use an arena otheriwse objects are destroyed.
   if (book_price < 0 || book_price >= bids.size()) {
     // TODO: make proper logging instead of throwing.
@@ -37,8 +39,10 @@ void OrderBook::add(ClientRequest& incoming) {
   }
 }
 
-void OrderBook::match(ClientRequest& incoming,
-                      std::vector<std::pair<Trade, ClientRequest>>& trades) {
+template <TachyonConfig config>
+void OrderBook<config>::match(
+    ClientRequest &incoming,
+    std::vector<std::pair<Trade, ClientRequest>> &trades) {
   if (incoming.new_order.side == Side::BID) {
     matchImplementation(
         incoming, asks,
@@ -52,7 +56,8 @@ void OrderBook::match(ClientRequest& incoming,
   }
 }
 
-auto OrderBook::cancelOrder(OrderId order_id, ClientRequest& to_cancel)
+template <TachyonConfig config>
+auto OrderBook<config>::cancelOrder(OrderId order_id, ClientRequest &to_cancel)
     -> bool {
   if (!list_idx.contains(order_id)) {
     return false;
@@ -67,8 +72,8 @@ auto OrderBook::cancelOrder(OrderId order_id, ClientRequest& to_cancel)
     }
     to_cancel = *it;
     bids[price].remove(it);
-    freeSlot(arena_idx.get(order_id));  // Free a slot.
-    arena_idx.remove(order_id);         // Also erase it's map.
+    freeSlot(arena_idx.get(order_id)); // Free a slot.
+    arena_idx.remove(order_id);        // Also erase it's map.
     list_idx.remove(order_id);
     return true;
   }
@@ -81,15 +86,17 @@ auto OrderBook::cancelOrder(OrderId order_id, ClientRequest& to_cancel)
 
     to_cancel = *it;
     asks[price].remove(it);
-    freeSlot(arena_idx.get(order_id));  // Free a slot.
-    arena_idx.remove(order_id);         // Also erase it's map.
+    freeSlot(arena_idx.get(order_id)); // Free a slot.
+    arena_idx.remove(order_id);        // Also erase it's map.
     list_idx.remove(order_id);
     return true;
   }
   return false;
 }
 
-auto OrderBook::allocateSlot(const ClientRequest& incoming) -> uint32_t {
+template <TachyonConfig config>
+auto OrderBook<config>::allocateSlot(const ClientRequest &incoming)
+    -> uint32_t {
   uint32_t idx;
   if (!free_list.empty()) {
     // recycle an old block.
@@ -107,14 +114,15 @@ auto OrderBook::allocateSlot(const ClientRequest& incoming) -> uint32_t {
   return idx;
 }
 
-void OrderBook::freeSlot(uint32_t idx) {
+template <TachyonConfig config> void OrderBook<config>::freeSlot(uint32_t idx) {
   assert(arena[idx].is_active);
   arena[idx].is_active = false;
   free_list.push_back(idx);
 }
 
 // Hopefully this function is not called.
-auto OrderBook::size_asks() -> size_t {
+
+template <TachyonConfig config> auto OrderBook<config>::size_asks() -> size_t {
   size_t size = 0;
   for (size_t i = 0; i < asks.size(); i++) {
     size += asks[i].size();
@@ -122,10 +130,13 @@ auto OrderBook::size_asks() -> size_t {
   return size;
 }
 
-auto OrderBook::size_bids() -> size_t {
+template <TachyonConfig config> auto OrderBook<config>::size_bids() -> size_t {
   size_t size = 0;
   for (size_t i = 0; i < bids.size(); i++) {
     size += bids[i].size();
   }
   return size;
 }
+
+// NOTE: templated types that are to be used should be placed here.
+template class OrderBook<my_config>;

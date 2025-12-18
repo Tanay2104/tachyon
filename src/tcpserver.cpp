@@ -30,29 +30,31 @@
 
 extern std ::atomic<bool> keep_running;
 
-void TcpServer::setNonBlocking(int file_descriptor) {
+template <TachyonConfig config>
+void TcpServer<config>::setNonBlocking(int file_descriptor) {
   int flags = fcntl(file_descriptor, F_GETFL, 0);
   fcntl(file_descriptor, F_SETFL, flags | O_NONBLOCK);
 }
 
-TcpServer::TcpServer(threadsafe::stl_queue<ClientRequest>& event_queue,
-                     threadsafe::stl_queue<ExecutionReport>& execution_reports)
-    : event_queue(event_queue),
-      execution_reports(execution_reports),
+template <TachyonConfig config>
+TcpServer<config>::TcpServer(config::EventQueue &event_queue,
+                             config::ExecReportQueue &execution_reports)
+    : event_queue(event_queue), execution_reports(execution_reports),
       client_map(16) {
   next_id.store(1);
 }
 
-void TcpServer::init(
-    std::string port) {  // small string so no need to pass by reference.
+template <TachyonConfig config>
+void TcpServer<config>::init(
+    std::string port) { // small string so no need to pass by reference.
   struct addrinfo hints;
-  struct addrinfo* servinfo;
-  struct addrinfo* ptr;
+  struct addrinfo *servinfo;
+  struct addrinfo *ptr;
   int yes = 1;
   memset(&hints, 0, sizeof hints);
   hints.ai_family = AF_UNSPEC;
   hints.ai_socktype = SOCK_STREAM;
-  hints.ai_flags = AI_PASSIVE;  // auto detect IP for me.
+  hints.ai_flags = AI_PASSIVE; // auto detect IP for me.
 
   int return_value = getaddrinfo(nullptr, port.data(), &hints, &servinfo);
   if (return_value != 0) {
@@ -78,7 +80,7 @@ void TcpServer::init(
       perror("server: bind");
       continue;
     }
-    break;  // we potentially found our socket.
+    break; // we potentially found our socket.
   }
 
   freeaddrinfo(servinfo);
@@ -97,15 +99,16 @@ void TcpServer::init(
 }
 
 // designed to run on a single thread to accept orders.
-void TcpServer::receiveData() {
+
+template <TachyonConfig config> void TcpServer<config>::receiveData() {
   int epoll_fd = epoll_create1(0);
   if (epoll_fd == -1) {
     throw std::runtime_error("epoll_create1 failed");
   }
   struct epoll_event evt;
   struct epoll_event events[MAX_EPOLL_EVENTS];
-  evt.events = EPOLLIN;     // only reading for new order, cancel order.
-  evt.data.fd = listen_fd;  // listening for new clients.
+  evt.events = EPOLLIN;    // only reading for new order, cancel order.
+  evt.data.fd = listen_fd; // listening for new clients.
 
   if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, listen_fd, &evt) == -1) {
     throw std::runtime_error("epoll_ctl: listen_fd");
@@ -114,7 +117,7 @@ void TcpServer::receiveData() {
 
   while (keep_running.load()) {
     int n_ready_fds = epoll_wait(epoll_fd, events, MAX_EPOLL_EVENTS,
-                                 -1);  // Partially blocking call..
+                                 -1); // Partially blocking call..
 
     if (n_ready_fds == -1) {
       perror("epoll_wait");
@@ -125,14 +128,14 @@ void TcpServer::receiveData() {
         handleNewConnection(evt, epoll_fd);
       } else {
         // data from existing client.
-        auto* conn = (ClientConnection*)events[i].data.ptr;
+        auto *conn = (ClientConnection *)events[i].data.ptr;
         uint8_t temp_buff[MAX_TEMP_BUFF_SIZE];
         ssize_t bytes_read = recv(conn->fd, temp_buff, sizeof(temp_buff), 0);
 
         if (bytes_read <= 0) {
           // handle disconnect or error.
           if (bytes_read < 0 && errno == EAGAIN) {
-            continue;  // spurious wakeup.
+            continue; // spurious wakeup.
           }
           close(conn->fd);
           // TODO: there must be a faster way for client map.
@@ -160,7 +163,7 @@ void TcpServer::receiveData() {
 
           else if (msg_type ==
                    static_cast<uint8_t>(MessageType::ORDER_CANCEL)) {
-            expected_len = 9;  // Update this if cancel struct changes.
+            expected_len = 9; // Update this if cancel struct changes.
           }
 
           else {
@@ -180,7 +183,7 @@ void TcpServer::receiveData() {
             break;
           }
           // We have a full message!
-          uint8_t* msg_start = conn->rx_buffer.data();
+          uint8_t *msg_start = conn->rx_buffer.data();
 
           if (msg_type == static_cast<uint8_t>(MessageType::ORDER_NEW)) {
             handleNewOrder(msg_start, conn->client_id);
@@ -202,24 +205,26 @@ void TcpServer::receiveData() {
   }
 }
 
-void TcpServer::handleNewConnection(struct epoll_event evt, int epoll_fd) {
+template <TachyonConfig config>
+void TcpServer<config>::handleNewConnection(struct epoll_event evt,
+                                            int epoll_fd) {
   // New connection.
   struct sockaddr_storage addr;
   socklen_t addr_len = sizeof addr;
-  int client_fd = accept(listen_fd, (struct sockaddr*)&addr, &addr_len);
+  int client_fd = accept(listen_fd, (struct sockaddr *)&addr, &addr_len);
   if (client_fd == -1) {
     perror("accept");
     return;
   }
   setNonBlocking(client_fd);
 
-  auto* conn = new ClientConnection(client_fd);
+  auto *conn = new ClientConnection(client_fd);
   conn->client_id = next_id.fetch_add(1);
   evt.events = EPOLLIN;
   evt.data.ptr = conn;
   if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &evt) == -1) {
     perror("epoll_ctl: connected socket");
-    delete conn;  // delete if failed.
+    delete conn; // delete if failed.
     close(client_fd);
   }
 
@@ -234,7 +239,8 @@ void TcpServer::handleNewConnection(struct epoll_event evt, int epoll_fd) {
             << " with assigned id = " << conn->client_id << "\n";
 }
 
-void TcpServer::handleNewOrder(uint8_t* buffer, ClientId cid) {
+template <TachyonConfig config>
+void TcpServer<config>::handleNewOrder(uint8_t *buffer, ClientId cid) {
   Order order;
   ClientRequest clr;
   deserialise_order(buffer, order);
@@ -253,7 +259,8 @@ void TcpServer::handleNewOrder(uint8_t* buffer, ClientId cid) {
   event_queue.push(clr);
 }
 
-void TcpServer::handleCancellation(uint8_t* buffer, ClientId cid) {
+template <TachyonConfig config>
+void TcpServer<config>::handleCancellation(uint8_t *buffer, ClientId cid) {
   OrderId order_id_to_cancel = deserialise_order_cancel(buffer);
   ClientRequest clr;
   clr.client_id = cid;
@@ -267,11 +274,12 @@ void TcpServer::handleCancellation(uint8_t* buffer, ClientId cid) {
   event_queue.push(clr);
 }
 
-auto TcpServer::flushBuffer(ClientConnection* conn) -> bool {
+template <TachyonConfig config>
+auto TcpServer<config>::flushBuffer(ClientConnection *conn) -> bool {
   if (conn->tx_buffer.empty()) {
     return true;
   }
-  const uint8_t* data_ptr = conn->tx_buffer.data() + conn->tx_offset;
+  const uint8_t *data_ptr = conn->tx_buffer.data() + conn->tx_offset;
   size_t remaining = conn->tx_buffer.size() - conn->tx_offset;
 
   // non blocking send.
@@ -299,9 +307,9 @@ auto TcpServer::flushBuffer(ClientConnection* conn) -> bool {
   return false;
 }
 
-void TcpServer::dispatchData() {
+template <TachyonConfig config> void TcpServer<config>::dispatchData() {
   ExecutionReport report;
-  uint8_t serialise_buf[64];  // serialisation buffer.
+  uint8_t serialise_buf[64]; // serialisation buffer.
   while (keep_running.load(std::memory_order_relaxed)) {
     // drain the queue via batch processing.
     int pops = 0;
@@ -313,7 +321,7 @@ void TcpServer::dispatchData() {
       {
         std::lock_guard<std::mutex> lock(client_map_mutex);
         if (client_map.contains(report.client_id)) {
-          ClientConnection* conn = client_map.get(report.client_id);
+          ClientConnection *conn = client_map.get(report.client_id);
 
           conn->tx_buffer.insert(conn->tx_buffer.end(), serialise_buf,
                                  serialise_buf + len);
@@ -327,7 +335,7 @@ void TcpServer::dispatchData() {
       // However, needs improvement.
       for (ClientId i = 1; i < next_id.load(); i++) {
         if (client_map.contains(i)) {
-          ClientConnection* conn = client_map.get(i);
+          ClientConnection *conn = client_map.get(i);
           if (!conn->tx_buffer.empty()) {
             flushBuffer(conn);
             work_done = true;
@@ -341,3 +349,5 @@ void TcpServer::dispatchData() {
     }
   }
 }
+
+template class TcpServer<my_config>;

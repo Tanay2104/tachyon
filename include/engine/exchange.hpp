@@ -5,27 +5,26 @@
 #include <network/tcpserver.hpp>
 #include <thread>
 
+#include "containers/intrusive_list.hpp"
 #include "containers/lock_queue.hpp"
 #include "engine/engine.hpp"
+#include "engine/logger.hpp"
 #include "engine/orderbook.hpp"
+#include "engine/requires.hpp"
 #include "engine/types.hpp"
 
-class Exchange {
- private:
+template <TachyonConfig config> class Exchange {
+private:
   // Various queues necessary.
-  threadsafe::stl_queue<ClientRequest> event_queue;
-  threadsafe::stl_queue<Trade> trades_queue;
-  threadsafe::stl_queue<ExecutionReport> execution_report;
+  config::EventQueue event_queue;
+  config::EventQueue processed_events;
+  config::TradesQueue trades_queue;
+  config::ExecReportQueue execution_report;
   // Key components.
-  OrderBook orderbook;
-  // GateWay gateway;
-  Engine engine;
-  TcpServer tcpserver;
-
-  // Clients.
-  // int num_clients = 0;
-  // std::deque<std::unique_ptr<Client>> clients;
-  // std::deque<std::thread> client_threads;
+  OrderBook<config> orderbook;
+  LoggerClass<config> logger;
+  Engine<config> engine;
+  TcpServer<config> tcpserver;
 
   // Threads.
   std::thread engine_event_handler;
@@ -37,16 +36,11 @@ class Exchange {
   // Start time of Exchange.
   std::chrono::steady_clock::time_point start;
 
-  // Functions to write to file.
-  void writeTrades();
-  void writeTradesContinuous();
-
- public:
+public:
   Exchange();
   ~Exchange();
   void init();
   void stop();
-  // void addClients(int num = NUM_DEFAULT_CLIENTS);
   void run();
 };
 

@@ -48,6 +48,7 @@ add_library(core_engine
           src/orderbook.cpp
           src/exchange.cpp
           src/tcpserver.cpp
+          src/logger.cpp
 )
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 # Building the main executable
