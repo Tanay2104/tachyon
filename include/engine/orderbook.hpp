@@ -10,8 +10,8 @@
 
 #include "containers/flat_hashmap.hpp"
 #include "containers/intrusive_list.hpp"
+#include "engine/concepts.hpp"
 #include "engine/constants.hpp"
-#include "engine/requires.hpp"
 #include "engine/types.hpp"
 
 // TODO: Make the arena also an concept

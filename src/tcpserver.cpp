@@ -25,7 +25,9 @@
 #include <string>
 #include <thread>
 
+#include "engine/concepts.hpp"
 #include "engine/types.hpp"
+#include "my_config.hpp"
 #include "network/serialise.hpp"
 
 extern std ::atomic<bool> keep_running;
@@ -56,7 +58,7 @@ void TcpServer<config>::init(
   hints.ai_socktype = SOCK_STREAM;
   hints.ai_flags = AI_PASSIVE; // auto detect IP for me.
 
-  int return_value = getaddrinfo(nullptr, port.data(), &hints, &servinfo);
+  int return_value = getaddrinfo(NULL, port.data(), &hints, &servinfo);
   if (return_value != 0) {
     fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(return_value));
     throw std::runtime_error("Error getting address info");
@@ -128,7 +130,10 @@ template <TachyonConfig config> void TcpServer<config>::receiveData() {
         handleNewConnection(evt, epoll_fd);
       } else {
         // data from existing client.
-        auto *conn = (ClientConnection *)events[i].data.ptr;
+        auto *conn =
+            (ClientConnection<typename config::RxBufferType,
+                              typename config::TxBufferType> *)events[i]
+                .data.ptr;
         uint8_t temp_buff[MAX_TEMP_BUFF_SIZE];
         ssize_t bytes_read = recv(conn->fd, temp_buff, sizeof(temp_buff), 0);
 
@@ -139,7 +144,6 @@ template <TachyonConfig config> void TcpServer<config>::receiveData() {
           }
           close(conn->fd);
           // TODO: there must be a faster way for client map.
-          std::lock_guard<std::mutex> lock(client_map_mutex);
           if (client_map.contains(conn->client_id)) {
             client_map.erase(conn->client_id);
           }
@@ -149,12 +153,11 @@ template <TachyonConfig config> void TcpServer<config>::receiveData() {
           continue;
         }
 
-        conn->rx_buffer.insert(conn->rx_buffer.end(), temp_buff,
-                               temp_buff + bytes_read);
+        conn->rx_buffer.insert(temp_buff, bytes_read);
 
         // drain as many full messages as possible.
         while (conn->rx_buffer.size() > 0) {
-          uint8_t msg_type = conn->rx_buffer[0];
+          uint8_t msg_type = *conn->rx_buffer.begin();
           uint32_t expected_len = 0;
 
           if (msg_type == static_cast<uint8_t>(MessageType::ORDER_NEW)) {
@@ -170,10 +173,10 @@ template <TachyonConfig config> void TcpServer<config>::receiveData() {
             // Invalid data.
             close(conn->fd);
 
-            std::lock_guard<std::mutex> lock(client_map_mutex);
             if (client_map.contains(conn->client_id)) {
               client_map.erase(conn->client_id);
             }
+            // Bad client.
             delete conn;
             break;
           }
@@ -183,7 +186,7 @@ template <TachyonConfig config> void TcpServer<config>::receiveData() {
             break;
           }
           // We have a full message!
-          uint8_t *msg_start = conn->rx_buffer.data();
+          uint8_t *msg_start = conn->rx_buffer.begin();
 
           if (msg_type == static_cast<uint8_t>(MessageType::ORDER_NEW)) {
             handleNewOrder(msg_start, conn->client_id);
@@ -196,9 +199,7 @@ template <TachyonConfig config> void TcpServer<config>::receiveData() {
           // nothing else should happen.
 
           // erase old data.
-          // TODO: vector erasure is slow. Maybe use circular buffer?
-          conn->rx_buffer.erase(conn->rx_buffer.begin(),
-                                conn->rx_buffer.begin() + expected_len);
+          conn->rx_buffer.erase(expected_len);
         }
       }
     }
@@ -218,17 +219,17 @@ void TcpServer<config>::handleNewConnection(struct epoll_event evt,
   }
   setNonBlocking(client_fd);
 
-  auto *conn = new ClientConnection(client_fd);
+  auto *conn = new ClientConnection<typename config::RxBufferType,
+                                    typename config::TxBufferType>(client_fd);
   conn->client_id = next_id.fetch_add(1);
   evt.events = EPOLLIN;
   evt.data.ptr = conn;
   if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &evt) == -1) {
     perror("epoll_ctl: connected socket");
-    delete conn; // delete if failed.
+    delete conn; // delete if connection failed.
     close(client_fd);
   }
 
-  std::lock_guard<std::mutex> lock(client_map_mutex);
   client_map.insert({conn->client_id, conn});
 
   uint8_t welcome[5];
@@ -275,11 +276,13 @@ void TcpServer<config>::handleCancellation(uint8_t *buffer, ClientId cid) {
 }
 
 template <TachyonConfig config>
-auto TcpServer<config>::flushBuffer(ClientConnection *conn) -> bool {
-  if (conn->tx_buffer.empty()) {
+auto TcpServer<config>::flushBuffer(
+    ClientConnection<typename config::RxBufferType,
+                     typename config::TxBufferType> *conn) -> bool {
+  if (conn->tx_buffer.size() == 0) {
     return true;
   }
-  const uint8_t *data_ptr = conn->tx_buffer.data() + conn->tx_offset;
+  const uint8_t *data_ptr = conn->tx_buffer.begin() + conn->tx_offset;
   size_t remaining = conn->tx_buffer.size() - conn->tx_offset;
 
   // non blocking send.
@@ -319,26 +322,25 @@ template <TachyonConfig config> void TcpServer<config>::dispatchData() {
       pops++;
       size_t len = serialise_execution_report(report, serialise_buf);
       {
-        std::lock_guard<std::mutex> lock(client_map_mutex);
         if (client_map.contains(report.client_id)) {
-          ClientConnection *conn = client_map.at(report.client_id);
+          ClientConnection<typename config::RxBufferType,
+                           typename config::TxBufferType> *conn =
+              client_map.at(report.client_id);
 
-          conn->tx_buffer.insert(conn->tx_buffer.end(), serialise_buf,
-                                 serialise_buf + len);
+          conn->tx_buffer.insert(serialise_buf, len);
         }
       }
     }
     {
       // flush the buffers.
-      std::lock_guard<std::mutex> lock(client_map_mutex);
       // NOTE: since our clients id's are 1 based, we CAN do this.
       // However, needs improvement.
-      // TODO: Currently holding a lock during MULTIPLE syscalls.
-      // Highly inefficient. Must do something else eventually.
       for (ClientId i = 1; i < next_id.load(); i++) {
         if (client_map.contains(i)) {
-          ClientConnection *conn = client_map.at(i);
-          if (!conn->tx_buffer.empty()) {
+          ClientConnection<typename config::RxBufferType,
+                           typename config::TxBufferType> *conn =
+              client_map.at(i);
+          if (!conn->tx_buffer.size() == 0) {
             flushBuffer(conn);
             work_done = true;
             // maybe use some epoll feature if fush buffer returns false??
@@ -353,3 +355,5 @@ template <TachyonConfig config> void TcpServer<config>::dispatchData() {
 }
 
 template class TcpServer<my_config>;
+template struct ClientConnection<my_config::RxBufferType,
+                                 my_config::TxBufferType>;

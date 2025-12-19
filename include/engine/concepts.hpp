@@ -1,9 +1,5 @@
 #pragma once
 
-#include "containers/arena.hpp"
-#include "containers/flat_hashmap.hpp"
-#include "containers/intrusive_list.hpp"
-#include "containers/lock_queue.hpp"
 #include "engine/types.hpp"
 #include <concepts>
 #include <cstddef>
@@ -47,12 +43,12 @@ concept Arena = requires(A arena, const ClientRequest &incoming, uint32_t idx) {
 };
 
 template <typename B>
-concept RxBuffer =
-    requires(B rxbuffer, std::ranges::iterator_t<B> end,
-             B::value_type *buff_start, B::value_type *buff_end, size_t index) {
-      { rxbuffer.insert(end, buff_start, buff_end) };
-      { rxbuffer.size() } -> std::convertible_to<size_t>;
-      { rxbuffer[index] } -> std::same_as<typename B::value_type>;
+concept RxTxBuffer =
+    requires(B rxtxbuffer, typename B::value_type *buff_start, size_t count) {
+      { rxtxbuffer.insert(buff_start, count) };
+      { rxtxbuffer.size() } -> std::convertible_to<size_t>;
+      { rxtxbuffer.erase(count) };
+      { rxtxbuffer.begin() } -> std::same_as<typename B::value_type *>;
     };
 
 template <typename C>
@@ -62,7 +58,7 @@ concept TachyonConfig = requires {
   typename C::PriceLevelHierarchyType::value_type;
   requires PriceLevelHierarchy<typename C::PriceLevelHierarchyType>;
 
-  // check if it has the various queues we need.
+  // NOTE: these queues must be threadsafe.
   typename C::EventQueue;
   requires ThreadSafeQueue<typename C::EventQueue, ClientRequest>;
 
@@ -84,20 +80,17 @@ concept TachyonConfig = requires {
 
   typename C::ArenaType;
   requires Arena<typename C::ArenaType>;
-};
 
-// Our sample config.
-struct my_config {
-  using MyPriceLevel = intrusive_list<ClientRequest>;
-  using PriceLevelHierarchyType = std::vector<MyPriceLevel>;
-  using EventQueue = threadsafe::stl_queue<ClientRequest>;
-  using TradesQueue = threadsafe::stl_queue<Trade>;
-  using ExecReportQueue = threadsafe::stl_queue<ExecutionReport>;
-  using ArenaIdxMap = flat_hashmap<OrderId, uint32_t>;
-  using ListIdxMap =
-      flat_hashmap<OrderId, std::tuple<Side, Price, MyPriceLevel::iterator>>;
+  typename C::RxBufferType;
+  requires RxTxBuffer<typename C::RxBufferType>;
 
-  using ArenaType = ArenaClass;
+  typename C::TxBufferType;
+  requires RxTxBuffer<typename C::TxBufferType>;
+
+  // NOTE: this must be threadsafe.
+  typename C::ClientMap;
+  requires Map<typename C::ClientMap, ClientId,
+               typename C::ClientMap::mapped_type>;
 };
 
 // Now we initialise our policies.

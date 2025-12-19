@@ -14,7 +14,6 @@
 #include <unistd.h>
 
 #include <algorithm>
-#include <atomic>
 #include <cerrno>
 #include <chrono>
 #include <cstddef>
@@ -22,25 +21,25 @@
 #include <cstdio>
 #include <cstring>
 #include <iostream>
-#include <mutex>
-#include <ranges>
 #include <stdexcept>
 #include <string>
 #include <thread>
 
 #include "engine/constants.hpp"
 #include "engine/types.hpp"
+#include "my_config.hpp"
 #include "network/serialise.hpp"
-Client::Client()
-    : generator(std::random_device{}()), distribution(CLIENT_BASE_PRICE, 5000) {
-  rx_buffer.reserve(1024);
-  tx_buffer.reserve(1024);
-}
 
-void Client::init(std::string host, std::string port) {
+template <TachyonConfig config>
+Client<config>::Client()
+    : generator(std::random_device{}()), distribution(CLIENT_BASE_PRICE, 5000),
+      rx_buffer(1024), tx_buffer(1024) {}
+
+template <TachyonConfig config>
+void Client<config>::init(std::string host, std::string port) {
   struct addrinfo hints;
-  struct addrinfo* servinfo;
-  struct addrinfo* ptr;
+  struct addrinfo *servinfo;
+  struct addrinfo *ptr;
   memset(&hints, 0, sizeof hints);
   hints.ai_family = AF_UNSPEC;
   hints.ai_socktype = SOCK_STREAM;
@@ -61,7 +60,7 @@ void Client::init(std::string host, std::string port) {
       perror("client: connect");
       continue;
     }
-    break;  // we potentially found our socket.
+    break; // we potentially found our socket.
   }
 
   if (ptr == nullptr) {
@@ -74,11 +73,12 @@ void Client::init(std::string host, std::string port) {
   std::cout << "Client connected to server\n";
   freeaddrinfo(servinfo);
 }
-auto Client::flushBuffer() -> bool {
-  if (tx_buffer.empty()) {
+
+template <TachyonConfig config> auto Client<config>::flushBuffer() -> bool {
+  if (tx_buffer.size() == 0) {
     return true;
   }
-  const uint8_t* data_ptr = tx_buffer.data() + tx_offset;
+  const uint8_t *data_ptr = tx_buffer.begin() + tx_offset;
   size_t remaining = tx_buffer.size() - tx_offset;
 
   // non blocking send.
@@ -102,7 +102,9 @@ auto Client::flushBuffer() -> bool {
   }
   return false;
 }
-void Client::updateEpoll(int epoll_fd, bool listen_for_write) {
+
+template <TachyonConfig config>
+void Client<config>::updateEpoll(int epoll_fd, bool listen_for_write) {
   struct epoll_event evt;
   evt.data.fd = sockfd;
   evt.events = EPOLLIN;
@@ -112,7 +114,7 @@ void Client::updateEpoll(int epoll_fd, bool listen_for_write) {
   epoll_ctl(epoll_fd, EPOLL_CTL_MOD, sockfd, &evt);
 }
 
-void Client::moveData() {
+template <TachyonConfig config> void Client<config>::moveData() {
   // recv -> rx_buffer -> deserialise -> exec reports queue -> used by
   // strategist. tx_buffer -> flush.
   // TODO: make some proper mechanism to close true loop
@@ -142,13 +144,13 @@ void Client::moveData() {
     Order order;
     while (pops < 100 && orders_to_place.try_pop(order)) {
       size_t len = serialise_order(order, serialise_buf);
-      tx_buffer.insert(tx_buffer.end(), serialise_buf, serialise_buf + len);
+      tx_buffer.insert(serialise_buf, len);
     }
     pops = 0;
     OrderId to_cancel;
     while (pops < 100 && cancels_to_place.try_pop(to_cancel)) {
       size_t len = serialise_order_cancel(to_cancel, serialise_buf);
-      tx_buffer.insert(tx_buffer.end(), serialise_buf, serialise_buf + len);
+      tx_buffer.insert(serialise_buf, len);
     }
 
     bool all_sent = flushBuffer();
@@ -166,7 +168,7 @@ void Client::moveData() {
 
     n_ready_fd = epoll_wait(epoll_fd, &events, 1, timeout);
     if (n_ready_fd > 0) {
-      if (bool(events.events & EPOLLIN)) {  // it is a read event.
+      if (bool(events.events & EPOLLIN)) { // it is a read event.
         uint8_t temp_buff[MAX_TEMP_BUF_SIZE];
         ssize_t bytes_read =
             recv(events.data.fd, temp_buff, sizeof(temp_buff), 0);
@@ -181,7 +183,7 @@ void Client::moveData() {
             return;
           }
         }
-        rx_buffer.insert(rx_buffer.end(), temp_buff, temp_buff + bytes_read);
+        rx_buffer.insert(temp_buff, bytes_read);
         // drain as many full messages as possible.
         drainRx();
 
@@ -195,13 +197,13 @@ void Client::moveData() {
   }
 }
 
-void Client::drainRx() {
+template <TachyonConfig config> void Client<config>::drainRx() {
   while (rx_buffer.size() > 0) {
-    uint8_t msg_type = rx_buffer[0];
+    uint8_t msg_type = *rx_buffer.begin();
     uint32_t expected_len = 0;
 
     if (msg_type == static_cast<uint8_t>(MessageType::LOGIN_RESPONSE)) {
-      expected_len = 5;  //  1 + 4 for client.
+      expected_len = 5; //  1 + 4 for client.
     }
     // TODO: there should be a feature for occur once only events right? Look
     // that up?
@@ -217,7 +219,7 @@ void Client::drainRx() {
       break;
     }
     // full message available!.
-    uint8_t* msg_start = rx_buffer.data();
+    uint8_t *msg_start = rx_buffer.begin();
     if (msg_type == static_cast<uint8_t>(MessageType::LOGIN_RESPONSE)) {
       uint32_t net_id;
       std::memcpy(&net_id, &msg_start[1], 4);
@@ -227,14 +229,14 @@ void Client::drainRx() {
     else if (msg_type == static_cast<uint8_t>(MessageType::EXEC_REPORT)) {
       ExecutionReport exec_report;
       deserialise_execution_report(msg_start, exec_report);
-      reports.push(exec_report);  // thread safe queue.
+      reports.push(exec_report); // thread safe queue.
     }
     // erase old data.
-    rx_buffer.erase(rx_buffer.begin(), rx_buffer.begin() + expected_len);
+    rx_buffer.erase(expected_len);
   }
 }
 
-void Client::generateOrders() {
+template <TachyonConfig config> void Client<config>::generateOrders() {
   // TODO: add some better methods to break the loop maybe?
 
   // NOTE: we are currenlty not using any market data or strategy.
@@ -249,7 +251,8 @@ void Client::generateOrders() {
   }
 }
 
-auto Client::generateOrderHelper() -> Order {
+template <TachyonConfig config>
+auto Client<config>::generateOrderHelper() -> Order {
   Order order;
   order.order_id =
       (static_cast<uint64_t>(my_id) << LOCAL_ORDER_BITS | local_order_id++);
@@ -269,3 +272,5 @@ auto Client::generateOrderHelper() -> Order {
   order.tif = TimeInForce::GTC;
   return order;
 }
+
+template class Client<my_config>;

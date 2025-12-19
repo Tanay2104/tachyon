@@ -1,5 +1,5 @@
 #pragma once
-#include "engine/requires.hpp"
+#include "engine/concepts.hpp"
 #include <containers/flat_hashmap.hpp>
 #include <containers/lock_queue.hpp>
 #include <cstddef>
@@ -7,17 +7,16 @@
 #include <engine/types.hpp>
 #include <string>
 
-struct ClientConnection {
+// If we directly force the concept, this results in a circular error.
+template <RxTxBuffer RxBuffer, RxTxBuffer TxBuffer> struct ClientConnection {
   int fd;
-  ClientId client_id;
+  ClientId client_id{};
 
-  std::vector<uint8_t> rx_buffer;
-  std::vector<uint8_t> tx_buffer;
+  RxBuffer rx_buffer;
+  TxBuffer tx_buffer;
   size_t tx_offset = 0; // how much of tx buffer is already sent?
-  ClientConnection(int file_descriptor) : fd(file_descriptor) {
-    rx_buffer.reserve(1024);
-    tx_buffer.reserve(1024);
-  }
+  ClientConnection(int file_descriptor)
+      : fd(file_descriptor), rx_buffer(1024), tx_buffer(1024) {}
 };
 
 template <TachyonConfig config> class TcpServer {
@@ -37,12 +36,10 @@ private:
   void handleNewOrder(uint8_t *buffer, ClientId cid);
   void handleCancellation(uint8_t *buffer, ClientId cid);
 
-  // this works. But is this really the best way?
-  // TODO: Add a config for this.
-  flat_hashmap<ClientId, ClientConnection *> client_map; // for dispatcher.
-  std::mutex client_map_mutex;
+  config::ClientMap client_map; // for dispatcher.
 
-  auto flushBuffer(ClientConnection *conn)
+  auto flushBuffer(ClientConnection<typename config::RxBufferType,
+                                    typename config::TxBufferType> *conn)
       -> bool; // return true if buff empty, all
                // sent. False if socket is full.
 public:
