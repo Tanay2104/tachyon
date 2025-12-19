@@ -285,13 +285,13 @@ auto TcpServer<config>::flushBuffer(
   if (conn->tx_buffer.size() == 0) {
     return true;
   }
-  const uint8_t *data_ptr = conn->tx_buffer.begin() + conn->tx_offset;
-  size_t remaining = conn->tx_buffer.size() - conn->tx_offset;
+  const uint8_t *data_ptr = conn->tx_buffer.begin();
+  size_t remaining = conn->tx_buffer.size();
 
   // non blocking send.
   ssize_t sent = send(conn->fd, data_ptr, remaining, MSG_DONTWAIT);
   if (sent > 0) {
-    conn->tx_offset += sent;
+    conn->tx_buffer.erase(sent);
   }
 
   else if (sent == -1) {
@@ -304,9 +304,8 @@ auto TcpServer<config>::flushBuffer(
     return false;
   }
   // check if sent everything.
-  if (conn->tx_offset >= conn->tx_buffer.size()) {
-    conn->tx_buffer.clear();
-    conn->tx_offset = 0;
+  if (conn->tx_buffer.size() == 0) {
+    conn->tx_buffer.clear(); // just to reset head, tail.
     return true;
   }
 

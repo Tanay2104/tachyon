@@ -33,10 +33,13 @@ private:
   void updateEpoll(int epoll_fd, bool listen_for_write);
 
   auto generateOrderHelper() -> Order;
+  void writeReports();
 
 public:
   Client();
+  ~Client();
   void init(std::string host, std::string port);
   void moveData();       // function which sends and recieves data.
   void generateOrders(); // generates requests using strategies.
+  void writeReportsContinuous();
 };

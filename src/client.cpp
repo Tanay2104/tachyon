@@ -1,10 +1,10 @@
 #include "network/client.hpp"
-
 #include <arpa/inet.h>
 #include <asm-generic/socket.h>
 #include <endian.h>
 #include <err.h>
 #include <fcntl.h>
+#include <fstream>
 #include <limits>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -26,15 +26,27 @@
 #include <string>
 #include <thread>
 
+#include "engine/concepts.hpp"
 #include "engine/constants.hpp"
 #include "engine/types.hpp"
 #include "my_config.hpp"
 #include "network/serialise.hpp"
 
+// NOTE: the report writing scheme isn't good rigth now.
+// Especially because ID's are not known at initilasation.
 template <TachyonConfig config>
 Client<config>::Client()
-    : generator(std::random_device{}()), distribution(CLIENT_BASE_PRICE, 5000),
-      rx_buffer(1024), tx_buffer(1024) {}
+    : generator(std::random_device{}()), distribution(CLIENT_BASE_PRICE, 500),
+      rx_buffer(1024), tx_buffer(1024) {
+
+  std::ofstream file;
+  std::string filename =
+      std::format("logs/execution_reports_client_{}.txt", my_id);
+  file.open(filename, std::ios::out);
+  file << "Execution Reports for Client " << my_id << "\n";
+}
+
+template <TachyonConfig config> Client<config>::~Client() { writeReports(); }
 
 template <TachyonConfig config>
 void Client<config>::init(std::string host, std::string port) {
@@ -79,14 +91,14 @@ template <TachyonConfig config> auto Client<config>::flushBuffer() -> bool {
   if (tx_buffer.size() == 0) {
     return true;
   }
-  const uint8_t *data_ptr = tx_buffer.begin() + tx_offset;
-  size_t remaining = tx_buffer.size() - tx_offset;
+  const uint8_t *data_ptr = tx_buffer.begin();
+  size_t remaining = tx_buffer.size();
 
   // non blocking send.
   ssize_t sent = send(sockfd, data_ptr, remaining, MSG_DONTWAIT);
 
   if (sent > 0) {
-    tx_offset += sent;
+    tx_buffer.erase(sent);
   } else if (sent == -1) {
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
       // kernel buffer full. stop trying.
@@ -96,9 +108,8 @@ template <TachyonConfig config> auto Client<config>::flushBuffer() -> bool {
     return false;
   }
 
-  if (tx_offset >= tx_buffer.size()) {
+  if (tx_buffer.size() == 0) {
     tx_buffer.clear();
-    tx_offset = 0;
     return true;
   }
   return false;
@@ -250,7 +261,7 @@ template <TachyonConfig config> void Client<config>::generateOrders() {
       std::cout << "meow didn't recieve id\n";
       // we haven't recieved id yet.
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
     orders_to_place.push(generateOrderHelper());
     if (local_order_id % (ORDER_CANCELLATION_FREQ) == 0) {
       OrderId to_delete = local_order_id - (rand() % (ORDER_CANCELLATION_FREQ));
@@ -289,4 +300,70 @@ auto Client<config>::generateOrderHelper() -> Order {
   return order;
 }
 
+// Clients are responsible for their own execution reports.
+template <TachyonConfig config> void Client<config>::writeReportsContinuous() {
+  while (true) {
+    if (reports.size() % MAX_EXECUTION_REPORTS_SIZE == 0) {
+      writeReports();
+    }
+  }
+}
+
+template <TachyonConfig config> void Client<config>::writeReports() {
+  std::ofstream file;
+  std::string filename =
+      std::format("logs/execution_reports_client_{}.txt", my_id);
+  file.open(filename, std::ios::app);
+  ExecutionReport report;
+  while (reports.try_pop(report)) {
+    file << "CLIENT " << report.client_id << " "
+         << "ORDER ID " << report.order_id << " "
+         << "PRICE " << report.price << " "
+         << "LAST QUANTITY " << report.last_quantity << " "
+         << "REMAINING QUANTITY " << report.remaining_quantity << " "
+         << (report.side == Side::BID ? "BUY " : "SELL ") << "EXEC TYPE ";
+    switch (report.type) {
+    case ExecType::NEW:
+      file << "NEW ";
+      break;
+    case ExecType::CANCELED:
+      file << "CANCELED ";
+      break;
+    case ExecType::REJECTED:
+      file << "REJECTED - ";
+      switch (report.reason) {
+      case RejectReason::NONE:
+        file << "NONE ";
+        break;
+      case RejectReason::ORDER_NOT_FOUND:
+        file << "ORDER_NOT_FOUND ";
+        break;
+      case RejectReason::PRICE_INVALID:
+        file << "PRICE_INVALID ";
+        break;
+      case RejectReason::QUANTITY_INVALID:
+        file << "QUANTITY_INVALID ";
+        break;
+      case RejectReason::MARKET_CLOSED:
+        file << "MARKET_CLOSED ";
+        break;
+      case RejectReason::SELF_TRADE:
+        file << "SELF_TRADE ";
+        break;
+      case RejectReason::INVALID_ORDER_TYPE:
+        file << "INVALID_ORDER_TYPE ";
+        break;
+      }
+      break;
+    case ExecType::TRADE:
+      file << "TRADE ";
+      break;
+    case ExecType::EXPIRED:
+      file << "EXPIRED ";
+      break;
+    }
+    file << "\n";
+  }
+  file.close();
+}
 template class Client<my_config>;

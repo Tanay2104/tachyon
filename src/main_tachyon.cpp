@@ -10,11 +10,9 @@
 std::atomic<bool> keep_running(true);
 
 // Signal handler for Ctrl + C
-void signal_handler(int /*unused*/) { keep_running.store(false); }
 
 auto main() -> int {
   // The main entry point of our simulation.
-  std::signal(SIGINT, signal_handler);
 
   uint32_t duration = 500000; // Running duration in ms.
   Exchange<my_config> exchange;
