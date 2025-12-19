@@ -8,20 +8,25 @@
 #include <thread>
 #include <vector>
 
+#include "containers/arena.hpp"
+#include "containers/flat_buffer.hpp"
 #include "containers/lock_queue.hpp"
+#include "containers/threadsafe_hashmap.hpp"
 #include "engine/constants.hpp"
 #include "engine/orderbook.hpp"
 #include "engine/types.hpp"
+#include "my_config.hpp"
+#include "network/tcpserver.hpp"
 // ============================================================================
 // 1. Data Generation Helpers
 // ============================================================================
-
 static std::vector<int> GetRandomPrices(int count, int min, int max) {
   std::vector<int> prices;
   prices.reserve(count);
   std::mt19937 rng(12345);
   std::uniform_int_distribution<int> dist(min, max);
-  for (int i = 0; i < count; ++i) prices.push_back(dist(rng));
+  for (int i = 0; i < count; ++i)
+    prices.push_back(dist(rng));
   return prices;
 }
 
@@ -53,7 +58,7 @@ ClientRequest makeReq(OrderId oid, Side side, Price price, Quantity qty,
 // ----------------------------------------------------------------------------
 // BENCHMARK: Adding Orders (Insertion)
 // ----------------------------------------------------------------------------
-static void BM_OrderBook_Add(benchmark::State& state) {
+static void BM_OrderBook_Add(benchmark::State &state) {
   const int N = state.range(0);
   auto prices = GetRandomPrices(N, 100, 200);
 
@@ -71,16 +76,16 @@ static void BM_OrderBook_Add(benchmark::State& state) {
   for (auto _ : state) {
     state.PauseTiming();
     {
-      OrderBook book;  // Fresh book every iteration
+      OrderBook<my_config> book; // Fresh book every iteration
 
-      state.ResumeTiming();  // START TIMER
+      state.ResumeTiming(); // START TIMER
 
       for (int i = 0; i < N; ++i) {
         book.add(orders[i]);
       }
 
-      state.PauseTiming();  // STOP TIMER
-    }  // Destructor runs here (unmeasured)
+      state.PauseTiming(); // STOP TIMER
+    } // Destructor runs here (unmeasured)
     state.ResumeTiming();
   }
   state.SetItemsProcessed(state.iterations() * N);
@@ -90,7 +95,7 @@ BENCHMARK(BM_OrderBook_Add)->Range(1024, 8 << 11);
 // ----------------------------------------------------------------------------
 // BENCHMARK: Canceling Orders
 // ----------------------------------------------------------------------------
-static void BM_OrderBook_Cancel(benchmark::State& state) {
+static void BM_OrderBook_Cancel(benchmark::State &state) {
   const int N = state.range(0);
   auto prices = GetRandomPrices(N, 100, 150);
 
@@ -111,18 +116,19 @@ static void BM_OrderBook_Cancel(benchmark::State& state) {
   for (auto _ : state) {
     state.PauseTiming();
     {
-      OrderBook book;
-      for (auto& o : orders) book.add(o);  // Fill book (unmeasured)
+      OrderBook<my_config> book;
+      for (auto &o : orders)
+        book.add(o); // Fill book (unmeasured)
       ClientRequest temp_store;
 
-      state.ResumeTiming();  // START TIMER
+      state.ResumeTiming(); // START TIMER
 
-      for (auto& c : cancels) {
+      for (auto &c : cancels) {
         // This measures the find_if linear scan + erase cost
         book.cancelOrder(c.order_id_to_cancel, temp_store);
       }
 
-      state.PauseTiming();  // STOP TIMER
+      state.PauseTiming(); // STOP TIMER
     }
     state.ResumeTiming();
   }
@@ -133,7 +139,7 @@ BENCHMARK(BM_OrderBook_Cancel)->Range(1024, 8 << 11);
 // ----------------------------------------------------------------------------
 // BENCHMARK: Matching (Sweep)
 // ----------------------------------------------------------------------------
-static void BM_OrderBook_Match_Sweep(benchmark::State& state) {
+static void BM_OrderBook_Match_Sweep(benchmark::State &state) {
   const int RESTING_COUNT = 1000;
   std::vector<ClientRequest> resting_orders;
   resting_orders.reserve(RESTING_COUNT);
@@ -151,16 +157,17 @@ static void BM_OrderBook_Match_Sweep(benchmark::State& state) {
   for (auto _ : state) {
     state.PauseTiming();
     {
-      OrderBook book;
-      for (auto& o : resting_orders) book.add(o);
+      OrderBook<my_config> book;
+      for (auto &o : resting_orders)
+        book.add(o);
       trades.clear();
 
-      state.ResumeTiming();  // START TIMER
+      state.ResumeTiming(); // START TIMER
 
       // Measures the matching engine loop and tree deletion
       book.match(aggressor, trades);
 
-      state.PauseTiming();  // STOP TIMER
+      state.PauseTiming(); // STOP TIMER
     }
     state.ResumeTiming();
   }

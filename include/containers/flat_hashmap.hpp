@@ -175,7 +175,12 @@ public:
   void insert(std::pair<const K &, const V &> pair) {
     insert(pair.first, pair.second, data);
   }
-
+  /* void insert(const std::pair<K, V> &pair) {
+    insert(pair.first, pair.second, data);
+  } */
+  template <typename P> void insert(P &&pair) {
+    insert(std::forward<P>(pair).first, std::forward<P>(pair).second, data);
+  }
   auto at(const K &key) -> V & { return get(key, data); }
 
   void erase(const K &key) { remove(key, data); }

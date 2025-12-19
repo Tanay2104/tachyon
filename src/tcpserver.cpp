@@ -118,6 +118,7 @@ template <TachyonConfig config> void TcpServer<config>::receiveData() {
   std::cout << "Engine event loop started\n";
 
   while (keep_running.load()) {
+
     int n_ready_fds = epoll_wait(epoll_fd, events, MAX_EPOLL_EVENTS,
                                  -1); // Partially blocking call..
 
@@ -142,6 +143,7 @@ template <TachyonConfig config> void TcpServer<config>::receiveData() {
           if (bytes_read < 0 && errno == EAGAIN) {
             continue; // spurious wakeup.
           }
+          std::cout << "Client disconnected\n";
           close(conn->fd);
           // TODO: there must be a faster way for client map.
           if (client_map.contains(conn->client_id)) {
@@ -152,14 +154,13 @@ template <TachyonConfig config> void TcpServer<config>::receiveData() {
           // delete conn;
           continue;
         }
-
         conn->rx_buffer.insert(temp_buff, bytes_read);
 
         // drain as many full messages as possible.
         while (conn->rx_buffer.size() > 0) {
           uint8_t msg_type = *conn->rx_buffer.begin();
           uint32_t expected_len = 0;
-
+          uint8_t *raw = conn->rx_buffer.begin();
           if (msg_type == static_cast<uint8_t>(MessageType::ORDER_NEW)) {
             expected_len = 1 + sizeof(Order);
           }
@@ -167,13 +168,15 @@ template <TachyonConfig config> void TcpServer<config>::receiveData() {
           else if (msg_type ==
                    static_cast<uint8_t>(MessageType::ORDER_CANCEL)) {
             expected_len = 9; // Update this if cancel struct changes.
-          }
-
-          else {
+          } else {
             // Invalid data.
+            std::cout << "Bad client invalid data, closing\n";
+            std::cout << "Client requested msg type = "
+                      << static_cast<int>(msg_type) << "\n";
             close(conn->fd);
 
             if (client_map.contains(conn->client_id)) {
+              std::cout << "Client was there in hash map\n";
               client_map.erase(conn->client_id);
             }
             // Bad client.
@@ -187,7 +190,6 @@ template <TachyonConfig config> void TcpServer<config>::receiveData() {
           }
           // We have a full message!
           uint8_t *msg_start = conn->rx_buffer.begin();
-
           if (msg_type == static_cast<uint8_t>(MessageType::ORDER_NEW)) {
             handleNewOrder(msg_start, conn->client_id);
           }
@@ -227,6 +229,7 @@ void TcpServer<config>::handleNewConnection(struct epoll_event evt,
   if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &evt) == -1) {
     perror("epoll_ctl: connected socket");
     delete conn; // delete if connection failed.
+    std::cout << "client is deleted wrong socket\n";
     close(client_fd);
   }
 
@@ -294,6 +297,7 @@ auto TcpServer<config>::flushBuffer(
   else if (sent == -1) {
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
       // kernel buffer full. stop trying.
+      std::cout << "Kernel buffer full\n";
       return false;
     }
     // other error? I guess client dead.

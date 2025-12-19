@@ -5,6 +5,7 @@
 #include <endian.h>
 #include <err.h>
 #include <fcntl.h>
+#include <limits>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <sys/epoll.h>
@@ -85,7 +86,7 @@ template <TachyonConfig config> auto Client<config>::flushBuffer() -> bool {
   ssize_t sent = send(sockfd, data_ptr, remaining, MSG_DONTWAIT);
 
   if (sent > 0) {
-    tx_offset = tx_offset += sent;
+    tx_offset += sent;
   } else if (sent == -1) {
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
       // kernel buffer full. stop trying.
@@ -141,21 +142,23 @@ template <TachyonConfig config> void Client<config>::moveData() {
     // Now we handle transmit.
     uint8_t serialise_buf[64];
     int pops = 0;
-    Order order;
+    Order order{};
     while (pops < 100 && orders_to_place.try_pop(order)) {
       size_t len = serialise_order(order, serialise_buf);
       tx_buffer.insert(serialise_buf, len);
+      pops++;
     }
     pops = 0;
     OrderId to_cancel;
     while (pops < 100 && cancels_to_place.try_pop(to_cancel)) {
       size_t len = serialise_order_cancel(to_cancel, serialise_buf);
       tx_buffer.insert(serialise_buf, len);
+      pops++;
     }
 
     bool all_sent = flushBuffer();
-    // First we handle recieves.
-
+    // upon printing all sent is almost always true.
+    // std::cout << "all sent = " << all_sent << "\n";
     if (!all_sent) {
       // we have data stuck in tx buffer.
       // So we need to listen for when we can write again.
@@ -242,11 +245,17 @@ template <TachyonConfig config> void Client<config>::generateOrders() {
   // NOTE: we are currenlty not using any market data or strategy.
   // These are to be added later.
   while (true) {
+    if (my_id == std::numeric_limits<ClientId>::max()) {
+      std::this_thread::yield();
+      std::cout << "meow didn't recieve id\n";
+      // we haven't recieved id yet.
+    }
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
     orders_to_place.push(generateOrderHelper());
     if (local_order_id % (ORDER_CANCELLATION_FREQ) == 0) {
       OrderId to_delete = local_order_id - (rand() % (ORDER_CANCELLATION_FREQ));
-      cancels_to_place.push((my_id << (LOCAL_ORDER_BITS) | to_delete));
+      cancels_to_place.push(
+          (static_cast<uint64_t>(my_id) << (LOCAL_ORDER_BITS) | to_delete));
     }
   }
 }
@@ -258,18 +267,25 @@ auto Client<config>::generateOrderHelper() -> Order {
       (static_cast<uint64_t>(my_id) << LOCAL_ORDER_BITS | local_order_id++);
   // We use random walk.
   // clients are fast enough so rand doesn't matter much.
-  order.price = Price(distribution(generator));
+  double result = distribution(generator);
+  while (result <= 0) {
+    result = distribution(generator);
+  }
+  order.price = Price(result);
   order.price = std::max<Price>(
       order.price, Price(CLIENT_BASE_PRICE + CLIENT_PRICE_DISTRIB_MIN));
 
   order.price = std::min<Price>(
       order.price, Price(CLIENT_BASE_PRICE + CLIENT_PRICE_DISTRIB_MAX));
-  order.quantity =
-      CLIENT_BASE_QUANTITY + (Quantity(distribution(generator)) % 10000);
-
+  order.quantity = CLIENT_BASE_QUANTITY + (rand() % 1000);
   order.side = static_cast<Side>(rand() % 2);
   order.order_type = OrderType::LIMIT;
   order.tif = TimeInForce::GTC;
+
+  // this cout is outputting correctly.
+  /* std::cout << "I placed new Order with Order id = " << order.order_id
+            << " client id: " << my_id << " price : " << order.price
+            << " quantity:  " << order.quantity << "\n"; */
   return order;
 }
 

@@ -44,7 +44,7 @@ struct __attribute__((packed)) Order {
   Side side;            // 1 byte
   OrderType order_type; // 1 byte
   TimeInForce tif;      // 1 byte
-}; // Total 19 bytes.
+}; // Total 23 bytes.
 
 struct ClientRequest {
   RequestType type;             // 1 byte

@@ -1,6 +1,5 @@
 #pragma once
 #include <algorithm>
-#include <atomic>
 #include <containers/flat_hashmap.hpp>
 #include <cstddef>
 #include <list>

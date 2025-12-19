@@ -6,12 +6,14 @@
 
 #include "engine/orderbook.hpp"
 #include "engine/types.hpp"
+#include "my_config.hpp"
 // ============================================================================
 // Test Helper: Deterministic Request Generator
 // ============================================================================
+
 class OrderBookTest : public ::testing::Test {
- protected:
-  OrderBook book;
+protected:
+  OrderBook<my_config> book;
   std::vector<std::pair<Trade, ClientRequest>> trades;
   TimeStamp current_time = 1000;
 
@@ -27,7 +29,7 @@ class OrderBookTest : public ::testing::Test {
     req.type = type;
     req.client_id = cid;
     req.time_stamp =
-        current_time++;  // Auto-increment for strict time priority testing
+        current_time++; // Auto-increment for strict time priority testing
 
     if (type == RequestType::New) {
       req.new_order.order_id = oid;
@@ -55,7 +57,7 @@ TEST_F(OrderBookTest, SingleOrderNoMatch) {
 
   EXPECT_EQ(book.size_asks(), 1);
   // Place a Buy order with price too low
-  auto buyLow = makeReq(2, 201, Side::BID, 90, 10);  // Buy @ 90 vs Sell @ 100
+  auto buyLow = makeReq(2, 201, Side::BID, 90, 10); // Buy @ 90 vs Sell @ 100
   book.match(buyLow, trades);
 
   EXPECT_TRUE(trades.empty());
@@ -114,9 +116,9 @@ TEST_F(OrderBookTest, PricePriority_Bid) {
   book.match(sell, trades);
 
   ASSERT_EQ(trades.size(), 3);
-  EXPECT_EQ(trades[0].first.maker_order_id, 102);  // Highest Price
+  EXPECT_EQ(trades[0].first.maker_order_id, 102); // Highest Price
   EXPECT_EQ(trades[1].first.maker_order_id, 101);
-  EXPECT_EQ(trades[2].first.maker_order_id, 100);  // Lowest Price
+  EXPECT_EQ(trades[2].first.maker_order_id, 100); // Lowest Price
 }
 
 TEST_F(OrderBookTest, PricePriority_Ask) {
@@ -134,17 +136,17 @@ TEST_F(OrderBookTest, PricePriority_Ask) {
   book.match(buy, trades);
 
   ASSERT_EQ(trades.size(), 3);
-  EXPECT_EQ(trades[0].first.maker_order_id, 100);  // Lowest Price
+  EXPECT_EQ(trades[0].first.maker_order_id, 100); // Lowest Price
   EXPECT_EQ(trades[1].first.maker_order_id, 101);
   EXPECT_EQ(trades[2].first.maker_order_id, 102);
 }
 
 TEST_F(OrderBookTest, TimePriority_Simple) {
   // Two orders at SAME price, different times
-  auto s1 = makeReq(1, 101, Side::ASK, 100, 10);  // Time 1000
+  auto s1 = makeReq(1, 101, Side::ASK, 100, 10); // Time 1000
   book.add(s1);
 
-  auto s2 = makeReq(2, 102, Side::ASK, 100, 10);  // Time 1001
+  auto s2 = makeReq(2, 102, Side::ASK, 100, 10); // Time 1001
   book.add(s2);
 
   // Buy 10 units
@@ -152,7 +154,7 @@ TEST_F(OrderBookTest, TimePriority_Simple) {
   book.match(buy, trades);
 
   ASSERT_EQ(trades.size(), 1);
-  EXPECT_EQ(trades[0].first.maker_order_id, 101);  // Earlier timestamp matched
+  EXPECT_EQ(trades[0].first.maker_order_id, 101); // Earlier timestamp matched
 }
 
 // ============================================================================
@@ -187,7 +189,7 @@ TEST_F(OrderBookTest, PartialFill_AggressorRemains) {
 
   ASSERT_EQ(trades.size(), 1);
   EXPECT_EQ(trades[0].first.maker_order_id,
-            201);  // The previous aggressor became the maker
+            201); // The previous aggressor became the maker
   EXPECT_EQ(trades[0].first.quantity, 5);
 }
 
@@ -209,7 +211,7 @@ TEST_F(OrderBookTest, PartialFill_RestingOrderRetainsPriority) {
   book.match(buy1, trades);
 
   ASSERT_EQ(trades.size(), 1);
-  EXPECT_EQ(trades[0].first.maker_order_id, 101);  // Matched A
+  EXPECT_EQ(trades[0].first.maker_order_id, 101); // Matched A
   trades.clear();
 
   // 4. Aggressive Buy 60 @ 100.
@@ -299,7 +301,7 @@ TEST_F(OrderBookTest, SelfTradeSkip) {
   book.match(buy, trades);
 
   ASSERT_EQ(trades.size(), 1);
-  EXPECT_EQ(trades[0].first.maker_order_id, 102);  // Matched Client 2
+  EXPECT_EQ(trades[0].first.maker_order_id, 102); // Matched Client 2
   EXPECT_EQ(trades[0].first.quantity, 10);
 
   // Note: The remaining 10 quantity of the aggressor might be resting or
@@ -329,7 +331,7 @@ TEST_F(OrderBookTest, CancelExistingOrder) {
 
 TEST_F(OrderBookTest, CancelNonExistentOrder) {
   ClientRequest cancelled;
-  bool success = book.cancelOrder(9999, cancelled);  // Random ID
+  bool success = book.cancelOrder(9999, cancelled); // Random ID
   EXPECT_FALSE(success);
 }
 

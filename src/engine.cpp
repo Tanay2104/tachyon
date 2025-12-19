@@ -98,16 +98,10 @@ template <TachyonConfig config> void Engine<config>::handleEvents() {
   uint64_t processed_events_count = 0;
   // NOTE: Only GTC LIMIT handlers exist now.
   while (keep_running.load(std::memory_order_relaxed)) {
-    std::deque<ClientRequest> batch;
-    event_queue.pop_all(batch);
-    if (batch.empty()) {
-      std::this_thread::yield();
-      continue;
-    }
-    TimeStamp now = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                        std::chrono::steady_clock::now().time_since_epoch())
-                        .count();
-    for (ClientRequest &incoming : batch) {
+    if (event_queue.try_pop(incoming)) {
+      TimeStamp now = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                          std::chrono::steady_clock::now().time_since_epoch())
+                          .count();
       // printEvent(incoming); // For debugging only!
       processed_events.push(incoming);
       processed_events_count++;
@@ -118,8 +112,8 @@ template <TachyonConfig config> void Engine<config>::handleEvents() {
         std::cout << "Event queue size: " << event_queue.size() << "\n";
       }
       if (incoming.type == RequestType::New) {
-        // For now, we assume correct price and quantity. So every order will be
-        // accepted.
+        // For now, we assume correct price and quantity. So every order will
+        // be accepted.
         logger.logNewOrder(incoming);
         if (incoming.new_order.tif == TimeInForce::GTC) {
           if (incoming.new_order.order_type == OrderType::LIMIT) {
@@ -144,7 +138,6 @@ template <TachyonConfig config> void Engine<config>::handleEvents() {
         }
       }
     }
-    batch.clear();
   }
 }
 

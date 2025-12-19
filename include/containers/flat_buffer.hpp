@@ -22,7 +22,7 @@ private:
     }
     T *tmp = new T[new_capacitity];
     std::memcpy(tmp, &data[head], size());
-    delete data;
+    delete[] data;
     data = tmp;
     tail = size();
     head = 0;
@@ -32,10 +32,10 @@ private:
 public:
   using value_type = T;
 
-  flat_buffer(int n = DEFAULT_SIZE) : capacity(n), head(0), tail(0) {
-    data = new T[capacity];
-  }
+  flat_buffer(int n = DEFAULT_SIZE)
+      : capacity(n), head(0), tail(0), data(new T[capacity]) {}
 
+  ~flat_buffer() { delete[] data; }
   size_t size() { return (tail - head); }
   T *begin() { return &data[head]; }
   T *end() { return &data[tail]; }
@@ -44,9 +44,12 @@ public:
   void insert(T *start, size_t count) {
     if (head >= capacity - 1 - size()) { // Buffer is "saturated",
       reset();
-    } else if (tail >= capacity - 1) { // ideally it should be  ==
+    }
+    while ((tail >= capacity - 1) ||
+           (tail + count >= capacity)) { // ideally it should be  ==
       grow();
     }
+
     std::memcpy(&data[tail], start, count);
     tail = tail + count;
   }
@@ -58,8 +61,11 @@ public:
 
   // Move all elements to the beginning.
   void reset() {
-    // NOTE: I am assuming that memcpy works sequentially.
+    // NOTE: I am assuming that memmove works sequentially.
     // Otherwise data might become corrupted?
-    std::memcpy(data, &data[head], size());
+    std::memmove(data, &data[head], size());
+    size_t old_size = size();
+    head = 0;
+    tail = old_size;
   }
 };

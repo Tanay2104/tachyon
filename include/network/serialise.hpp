@@ -18,19 +18,21 @@ static_assert(sizeof(Side) == 1);
 static_assert(sizeof(OrderType) == 1);
 static_assert(sizeof(TimeInForce) == 1);
 static_assert(sizeof(ClientId) == 4);
+static_assert(sizeof(Order) == 23);
+static_assert(sizeof(ExecutionReport) == 31);
 
 enum class MessageType : uint8_t {
-  ORDER_NEW = 1,
-  ORDER_CANCEL = 2,
-  EXEC_REPORT = 3,
-  TRADE = 4,
-  LOGIN_RESPONSE = 5
+  ORDER_NEW,
+  ORDER_CANCEL,
+  EXEC_REPORT,
+  TRADE,
+  LOGIN_RESPONSE
 };
 // NOLINTBEGIN
 // Converts Order struct to 24 byte buffer.
 // Returns number of bytes written(ideally always 24)
 // Assuming client server same Endianness.
-auto serialise_order(const Order& order, uint8_t* buffer) -> size_t {
+auto serialise_order(const Order &order, uint8_t *buffer) -> size_t {
   // Byte 0 : message type.
   buffer[0] = static_cast<uint8_t>(MessageType::ORDER_NEW);
 
@@ -39,7 +41,7 @@ auto serialise_order(const Order& order, uint8_t* buffer) -> size_t {
   network_order.price = htobe64(order.price);
   network_order.quantity = htobe32(order.quantity);
   network_order.side =
-      order.side;  // Since this is a single byte no endiannes change needed.
+      order.side; // Since this is a single byte no endiannes change needed.
   network_order.order_type = order.order_type;
   network_order.tif = order.tif;
 
@@ -48,8 +50,8 @@ auto serialise_order(const Order& order, uint8_t* buffer) -> size_t {
   return 1 + sizeof(Order);
 }
 
-void deserialise_order(const uint8_t* buffer,
-                       Order& order) {  // maybe return client id?
+void deserialise_order(const uint8_t *buffer,
+                       Order &order) { // maybe return client id?
   // Sould we assert this? I think so.
   assert(buffer[0] == static_cast<uint8_t>(MessageType::ORDER_NEW));
   Order network_order{};
@@ -62,21 +64,21 @@ void deserialise_order(const uint8_t* buffer,
   order.tif = network_order.tif;
 }
 
-auto serialise_new_login(ClientId new_id, uint8_t* buffer) -> size_t {
+auto serialise_new_login(ClientId new_id, uint8_t *buffer) -> size_t {
   buffer[0] = static_cast<uint8_t>(MessageType::LOGIN_RESPONSE);
   new_id = htobe32(new_id);
   std::memcpy(&buffer[1], &new_id, 4);
   return 5;
 }
 
-auto deserialise_new_login(const uint8_t* buffer) -> ClientId {
+auto deserialise_new_login(const uint8_t *buffer) -> ClientId {
   assert(buffer[0] == static_cast<uint8_t>(MessageType::LOGIN_RESPONSE));
   ClientId new_id;
   std::memcpy(&new_id, &buffer[1], 4);
   new_id = be32toh(new_id);
   return new_id;
 }
-auto serialise_execution_report(const ExecutionReport& report, uint8_t* buffer)
+auto serialise_execution_report(const ExecutionReport &report, uint8_t *buffer)
     -> size_t {
   buffer[0] = static_cast<uint8_t>(MessageType::EXEC_REPORT);
   ExecutionReport network_exec_report;
@@ -93,8 +95,8 @@ auto serialise_execution_report(const ExecutionReport& report, uint8_t* buffer)
   return 1 + sizeof(ExecutionReport);
 }
 
-void deserialise_execution_report(const uint8_t* buffer,
-                                  ExecutionReport& exec_report) {
+void deserialise_execution_report(const uint8_t *buffer,
+                                  ExecutionReport &exec_report) {
   assert(buffer[0] == static_cast<uint8_t>(MessageType::EXEC_REPORT));
   ExecutionReport network_exec_report{};
   std::memcpy(&network_exec_report, &buffer[1], sizeof(ExecutionReport));
@@ -109,7 +111,7 @@ void deserialise_execution_report(const uint8_t* buffer,
   exec_report.reason = network_exec_report.reason;
 }
 
-auto serialise_trade(const Trade& trade, uint8_t* buffer) -> size_t {
+auto serialise_trade(const Trade &trade, uint8_t *buffer) -> size_t {
   buffer[0] = static_cast<uint8_t>(MessageType::TRADE);
   Trade network_trade;
   network_trade.price = htobe64(trade.price);
@@ -123,7 +125,7 @@ auto serialise_trade(const Trade& trade, uint8_t* buffer) -> size_t {
   return 1 + sizeof(Trade);
 }
 
-void deserialise_trade(const uint8_t* buffer, Trade& trade) {
+void deserialise_trade(const uint8_t *buffer, Trade &trade) {
   assert(buffer[0] == static_cast<uint8_t>(MessageType::TRADE));
   Trade network_trade{};
   std::memcpy(&network_trade, &buffer[1], sizeof(Trade));
@@ -136,7 +138,7 @@ void deserialise_trade(const uint8_t* buffer, Trade& trade) {
 }
 
 // NOTE: do we really need client id here? Maybe we can do without this.
-auto serialise_order_cancel(OrderId order_id, uint8_t* buffer) -> size_t {
+auto serialise_order_cancel(OrderId order_id, uint8_t *buffer) -> size_t {
   buffer[0] = static_cast<uint8_t>(MessageType::ORDER_CANCEL);
   order_id = htobe64(order_id);
   std::memcpy(&buffer[1], &order_id, 8);
@@ -144,7 +146,7 @@ auto serialise_order_cancel(OrderId order_id, uint8_t* buffer) -> size_t {
   return 9;
 }
 
-auto deserialise_order_cancel(const uint8_t* buffer) -> OrderId {
+auto deserialise_order_cancel(const uint8_t *buffer) -> OrderId {
   assert(buffer[0] == static_cast<uint8_t>(MessageType::ORDER_CANCEL));
   OrderId order_id;
 

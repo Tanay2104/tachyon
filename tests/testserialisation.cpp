@@ -16,15 +16,15 @@ TEST(SerializationTest, Order_RoundTrip_Basic) {
   // 1. Setup Input
   Order original;
   original.order_id = 123456789;
-  original.price = 10050;  // 100.50
+  original.price = 10050; // 100.50
   original.quantity = 500;
   original.side = Side::BID;
   original.order_type = OrderType::LIMIT;
   original.tif = TimeInForce::GTC;
 
   // 2. Serialize
-  uint8_t buffer[128];                     // Plenty of space
-  std::memset(buffer, 0, sizeof(buffer));  // Zero out for safety
+  uint8_t buffer[128];                    // Plenty of space
+  std::memset(buffer, 0, sizeof(buffer)); // Zero out for safety
   size_t bytes_written = serialise_order(original, buffer);
 
   // 3. Verify Size
@@ -53,7 +53,7 @@ TEST(SerializationTest, Order_RawBytes_EndiannessCheck) {
      buffer.
   */
 
-  Order original;
+  Order original{};
   // 0x0102030405060708
   original.order_id = 0x0102030405060708ULL;
   // 0xAABBCCDD
@@ -82,7 +82,7 @@ TEST(SerializationTest, Order_RawBytes_EndiannessCheck) {
   // So we check the network_struct layout logic.
 
   // Manual inspection pointer
-  const uint8_t* ptr = &buffer[1];
+  const uint8_t *ptr = &buffer[1];
 
   // Check OrderID at offset 0 of struct
   EXPECT_EQ(ptr[0], 0x01);
@@ -96,7 +96,7 @@ TEST(SerializationTest, Order_RawBytes_EndiannessCheck) {
 
 TEST(SerializationTest, Order_BoundaryValues) {
   Order original;
-  original.order_id = std::numeric_limits<OrderId>::max();  // UINT64_MAX
+  original.order_id = std::numeric_limits<OrderId>::max(); // UINT64_MAX
   original.price = std::numeric_limits<Price>::max();
   original.quantity = std::numeric_limits<Quantity>::max();
 
@@ -177,8 +177,8 @@ TEST(SerializationTest, Cancel_RoundTrip_ManualPacking) {
   uint8_t buffer[128];
   size_t len = serialise_order_cancel(oid, buffer);
 
-  // Verify Size (1 byte type + 4 byte cid + 8 byte oid)
-  ASSERT_EQ(len, 13);
+  // Verify Size (1 byte type + 8 byte oid)
+  ASSERT_EQ(len, 9);
   EXPECT_EQ(buffer[0], static_cast<uint8_t>(MessageType::ORDER_CANCEL));
 
   OrderId res_oid = deserialise_order_cancel(buffer);
@@ -187,7 +187,7 @@ TEST(SerializationTest, Cancel_RoundTrip_ManualPacking) {
 }
 
 TEST(SerializationTest, Cancel_ByteAlignment) {
-  OrderId oid = 0xAABBCCDDEEFF0011;  // 8 bytes
+  OrderId oid = 0xAABBCCDDEEFF0011; // 8 bytes
 
   uint8_t buffer[128];
   serialise_order_cancel(oid, buffer);

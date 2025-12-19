@@ -8,7 +8,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON) # Generates files for clangd
 
 # Strict warnings
-add_compile_options(-Wall -Wextra -Wpedantic -fconcepts-diagnostics-depth=2)
+add_compile_options(-Wall -Wextra -Wpedantic -fconcepts-diagnostics-depth=4)
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     add_compile_options(-fsanitize=address -g -O0)
     add_link_options(-fsanitize=address)
@@ -77,17 +77,21 @@ add_executable(testserialisation
             tests/testserialisation.cpp)
 add_executable(testflathashmap
             tests/testflathashmap.cpp)
-
+add_executable(testflatbuffer
+            tests/testflatbuffer.cpp)
+add_executable(testthreadsafehashmap
+            tests/testthreadsafehashmap.cpp)
 
 target_link_libraries(testorderbook PRIVATE core_engine gtest_main)
 target_link_libraries(testcircularbuffer PRIVATE gtest_main)
 target_link_libraries(testintrusivelist PRIVATE gtest_main)
 target_link_libraries(testserialisation PRIVATE gtest_main)
 target_link_libraries(testflathashmap PRIVATE gtest_main)
-
+target_link_libraries(testthreadsafehashmap PRIVATE gtest_main)
+target_link_libraries(testflatbuffer PRIVATE gtest_main)
 # Build benchmarks
 add_executable(benchmarkorderbook
-            benchmarks/benchmark_main.cpp
+            benchmarks/benchmark_orderbook.cpp
             # BENCHMARK FILE
             )
 add_executable(benchmarklockqueue

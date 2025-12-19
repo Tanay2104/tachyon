@@ -14,7 +14,7 @@
 // ----------------------------------------------------------------------------
 // BENCHMARK: Single Thread Throughput (Baseline)
 // ----------------------------------------------------------------------------
-static void BM_LockSTLQueue_Throughput(benchmark::State& state) {
+static void BM_LockSTLQueue_Throughput(benchmark::State &state) {
   threadsafe::stl_queue<int> q;
   const int BATCH = 1000;
 
@@ -31,7 +31,7 @@ static void BM_LockSTLQueue_Throughput(benchmark::State& state) {
 }
 BENCHMARK(BM_LockSTLQueue_Throughput);
 
-static void BM_ShardedQueue_Throughput(benchmark::State& state) {
+/* static void BM_ShardedQueue_Throughput(benchmark::State& state) {
   threadsafe::sharded_queue<int> q;
   const int BATCH = 1000;
 
@@ -46,11 +46,11 @@ static void BM_ShardedQueue_Throughput(benchmark::State& state) {
   }
   state.SetItemsProcessed(state.iterations() * BATCH * 2);
 }
-BENCHMARK(BM_ShardedQueue_Throughput);
+BENCHMARK(BM_ShardedQueue_Throughput); */
 // ----------------------------------------------------------------------------
 // BENCHMARK: Multi-Thread Contention (Producer vs Consumer)
 // ----------------------------------------------------------------------------
-static void BM_LockSTLQueue_Contention(benchmark::State& state) {
+static void BM_LockSTLQueue_Contention(benchmark::State &state) {
   // 1. Data Setup
   threadsafe::stl_queue<int> q;
   const int ITEMS = state.range(0);
@@ -95,7 +95,8 @@ static void BM_LockSTLQueue_Contention(benchmark::State& state) {
     }
     // Drain any debris if logic drifted (sanity)
     int dump;
-    while (q.try_pop(dump));
+    while (q.try_pop(dump))
+      ;
 
     // B. Set the goal
     items_remaining.store(ITEMS, std::memory_order_release);
@@ -116,7 +117,8 @@ static void BM_LockSTLQueue_Contention(benchmark::State& state) {
 
   // 5. Cleanup
   thread_exit.store(true, std::memory_order_release);
-  if (consumer.joinable()) consumer.join();
+  if (consumer.joinable())
+    consumer.join();
 
   // 6. Report Items (Push + Pop count)
   state.SetItemsProcessed(state.iterations() * ITEMS * 2);
@@ -129,7 +131,7 @@ BENCHMARK(BM_LockSTLQueue_Contention)->Arg(1000)->Arg(100000)->UseRealTime();
 // ----------------------------------------------------------------------------
 // BENCHMARK: Single Thread Throughput (Baseline)
 // ----------------------------------------------------------------------------
-static void BM_LockQueue_Throughput(benchmark::State& state) {
+static void BM_LockQueue_Throughput(benchmark::State &state) {
   threadsafe::lock_queue<int> q;
   const int BATCH = 1000;
 
@@ -149,7 +151,7 @@ BENCHMARK(BM_LockQueue_Throughput);
 // ----------------------------------------------------------------------------
 // BENCHMARK: Multi-Thread Contention (Producer vs Consumer)
 // ----------------------------------------------------------------------------
-static void BM_LockQueue_Contention(benchmark::State& state) {
+static void BM_LockQueue_Contention(benchmark::State &state) {
   // 1. Data Setup
   threadsafe::lock_queue<int> q;
   const int ITEMS = state.range(0);
@@ -194,7 +196,8 @@ static void BM_LockQueue_Contention(benchmark::State& state) {
     }
     // Drain any debris if logic drifted (sanity)
     int dump;
-    while (q.try_pop(dump));
+    while (q.try_pop(dump))
+      ;
 
     // B. Set the goal
     items_remaining.store(ITEMS, std::memory_order_release);
