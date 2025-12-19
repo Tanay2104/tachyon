@@ -38,6 +38,7 @@ private:
   void handleCancellation(uint8_t *buffer, ClientId cid);
 
   // this works. But is this really the best way?
+  // TODO: Add a config for this.
   flat_hashmap<ClientId, ClientConnection *> client_map; // for dispatcher.
   std::mutex client_map_mutex;
 

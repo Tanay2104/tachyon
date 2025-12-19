@@ -22,20 +22,25 @@ void OrderBook<config>::add(ClientRequest &incoming) {
     // TODO: make proper logging instead of throwing.
     throw std::out_of_range("Price invalid");
   }
-  allocateSlot(incoming);
+
+  uint32_t allotted_index = arena.allocateSlot(incoming);
+  OrderId order_id =
+      incoming.new_order.order_id; // NOTE: directly binding gives some error.
+  arena_idx.insert({order_id, allotted_index});
+
   if (incoming.new_order.side == Side::BID) {
     bids[book_price].push_back(
-        arena[arena_idx.get(incoming.new_order.order_id)].clr);
+        arena[arena_idx.at(incoming.new_order.order_id)].clr);
     intrusive_list<ClientRequest>::iterator it = bids[book_price].end();
     it--;
-    list_idx.insert(incoming.new_order.order_id, {Side::BID, book_price, it});
+    list_idx.insert({order_id, {Side::BID, book_price, it}});
   } else {
     asks[book_price].push_back(
-        arena[arena_idx.get(incoming.new_order.order_id)].clr);
+        arena[arena_idx.at(incoming.new_order.order_id)].clr);
 
     intrusive_list<ClientRequest>::iterator it = asks[book_price].end();
     it--;
-    list_idx.insert(incoming.new_order.order_id, {Side::ASK, book_price, it});
+    list_idx.insert({order_id, {Side::ASK, book_price, it}});
   }
 }
 
@@ -62,62 +67,36 @@ auto OrderBook<config>::cancelOrder(OrderId order_id, ClientRequest &to_cancel)
   if (!list_idx.contains(order_id)) {
     return false;
   }
-  auto [side, price, it] = list_idx.get(order_id);
+  auto [side, price, it] = list_idx.at(order_id);
 
   if (side == Side::BID) {
     if ((bids[price].size() == 0) || (it == bids[price].end())) {
       // Corrupted state. idx exists but not in list.
-      list_idx.remove(order_id);
+      list_idx.erase(order_id);
       return false;
     }
     to_cancel = *it;
-    bids[price].remove(it);
-    freeSlot(arena_idx.get(order_id)); // Free a slot.
-    arena_idx.remove(order_id);        // Also erase it's map.
-    list_idx.remove(order_id);
+    bids[price].erase(it);
+    arena.freeSlot(arena_idx.at(order_id)); // Free a slot.
+    arena_idx.erase(order_id);              // Also erase it's map.
+    list_idx.erase(order_id);
     return true;
   }
   if (side == Side::ASK) {
     if ((asks[price].size() == 0) || (it == asks[price].end())) {
       // Corrupted state. idx exists but not in list.
-      list_idx.remove(order_id);
+      list_idx.erase(order_id);
       return false;
     }
 
     to_cancel = *it;
-    asks[price].remove(it);
-    freeSlot(arena_idx.get(order_id)); // Free a slot.
-    arena_idx.remove(order_id);        // Also erase it's map.
-    list_idx.remove(order_id);
+    asks[price].erase(it);
+    arena.freeSlot(arena_idx.at(order_id)); // Free a slot.
+    arena_idx.erase(order_id);              // Also erase it's map.
+    list_idx.erase(order_id);
     return true;
   }
   return false;
-}
-
-template <TachyonConfig config>
-auto OrderBook<config>::allocateSlot(const ClientRequest &incoming)
-    -> uint32_t {
-  uint32_t idx;
-  if (!free_list.empty()) {
-    // recycle an old block.
-    idx = free_list.back();
-    free_list.pop_back();
-  } else {
-    // create new slot.
-    idx = arena.size();
-    arena.emplace_back();
-  }
-  arena[idx].clr = incoming;
-  arena[idx].is_active = true;
-  arena_idx.insert(incoming.new_order.order_id, idx);
-
-  return idx;
-}
-
-template <TachyonConfig config> void OrderBook<config>::freeSlot(uint32_t idx) {
-  assert(arena[idx].is_active);
-  arena[idx].is_active = false;
-  free_list.push_back(idx);
 }
 
 // Hopefully this function is not called.

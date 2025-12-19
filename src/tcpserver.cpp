@@ -141,7 +141,7 @@ template <TachyonConfig config> void TcpServer<config>::receiveData() {
           // TODO: there must be a faster way for client map.
           std::lock_guard<std::mutex> lock(client_map_mutex);
           if (client_map.contains(conn->client_id)) {
-            client_map.remove(conn->client_id);
+            client_map.erase(conn->client_id);
           }
           // NOTE: may release in heap use after free if deleted conn
           // prematurely. So commented out for now. Memory leak will be there.
@@ -172,7 +172,7 @@ template <TachyonConfig config> void TcpServer<config>::receiveData() {
 
             std::lock_guard<std::mutex> lock(client_map_mutex);
             if (client_map.contains(conn->client_id)) {
-              client_map.remove(conn->client_id);
+              client_map.erase(conn->client_id);
             }
             delete conn;
             break;
@@ -229,7 +229,7 @@ void TcpServer<config>::handleNewConnection(struct epoll_event evt,
   }
 
   std::lock_guard<std::mutex> lock(client_map_mutex);
-  client_map.insert(conn->client_id, conn);
+  client_map.insert({conn->client_id, conn});
 
   uint8_t welcome[5];
   serialise_new_login(conn->client_id, welcome);
@@ -308,7 +308,7 @@ auto TcpServer<config>::flushBuffer(ClientConnection *conn) -> bool {
 }
 
 template <TachyonConfig config> void TcpServer<config>::dispatchData() {
-  ExecutionReport report;
+  ExecutionReport report{};
   uint8_t serialise_buf[64]; // serialisation buffer.
   while (keep_running.load(std::memory_order_relaxed)) {
     // drain the queue via batch processing.
@@ -321,7 +321,7 @@ template <TachyonConfig config> void TcpServer<config>::dispatchData() {
       {
         std::lock_guard<std::mutex> lock(client_map_mutex);
         if (client_map.contains(report.client_id)) {
-          ClientConnection *conn = client_map.get(report.client_id);
+          ClientConnection *conn = client_map.at(report.client_id);
 
           conn->tx_buffer.insert(conn->tx_buffer.end(), serialise_buf,
                                  serialise_buf + len);
@@ -333,9 +333,11 @@ template <TachyonConfig config> void TcpServer<config>::dispatchData() {
       std::lock_guard<std::mutex> lock(client_map_mutex);
       // NOTE: since our clients id's are 1 based, we CAN do this.
       // However, needs improvement.
+      // TODO: Currently holding a lock during MULTIPLE syscalls.
+      // Highly inefficient. Must do something else eventually.
       for (ClientId i = 1; i < next_id.load(); i++) {
         if (client_map.contains(i)) {
-          ClientConnection *conn = client_map.get(i);
+          ClientConnection *conn = client_map.at(i);
           if (!conn->tx_buffer.empty()) {
             flushBuffer(conn);
             work_done = true;

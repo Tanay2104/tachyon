@@ -8,7 +8,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON) # Generates files for clangd
 
 # Strict warnings
-add_compile_options(-Wall -Wextra -Wpedantic)
+add_compile_options(-Wall -Wextra -Wpedantic -fconcepts-diagnostics-depth=3)
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     add_compile_options(-fsanitize=address -g -O0)
     add_link_options(-fsanitize=address)

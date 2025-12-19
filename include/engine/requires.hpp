@@ -1,18 +1,23 @@
 #pragma once
 
+#include "containers/arena.hpp"
+#include "containers/flat_hashmap.hpp"
 #include "containers/intrusive_list.hpp"
 #include "containers/lock_queue.hpp"
 #include "engine/types.hpp"
 #include <concepts>
+#include <cstddef>
+#include <cstdint>
 #include <ranges>
 
 template <typename L>
 concept PriceLevel =
     requires(L level, std::ranges::iterator_t<L> itr, ClientRequest &clr) {
       { level.push_back(clr) };
-      { level.remove(itr) } -> std::same_as<std::ranges::iterator_t<L>>;
+      { level.erase(itr) } -> std::same_as<std::ranges::iterator_t<L>>;
       { level.size() } -> std::convertible_to<std::size_t>;
     };
+// TODO: maybe change remove -> erase for consistency.
 
 template <typename H>
 concept PriceLevelHierarchy = requires(H hierarchy, Price price) {
@@ -27,10 +32,34 @@ concept ThreadSafeQueue = requires(Q &queue, T &item) {
   { queue.try_pop(item) } -> std::convertible_to<bool>;
 };
 
+template <typename M, typename K, typename V>
+concept Map = requires(M &map, K &key, V &value) {
+  { map.insert({key, value}) };
+  { map.contains(key) } -> std::convertible_to<bool>;
+  { map.at(key) } -> std::same_as<V &>;
+  { map.erase(key) };
+};
+
+template <typename A>
+concept Arena = requires(A arena, const ClientRequest &incoming, uint32_t idx) {
+  { arena.allocateSlot(incoming) } -> std::convertible_to<uint32_t>;
+  { arena.freeSlot(idx) };
+};
+
+template <typename B>
+concept RxBuffer =
+    requires(B rxbuffer, std::ranges::iterator_t<B> end,
+             B::value_type *buff_start, B::value_type *buff_end, size_t index) {
+      { rxbuffer.insert(end, buff_start, buff_end) };
+      { rxbuffer.size() } -> std::convertible_to<size_t>;
+      { rxbuffer[index] } -> std::same_as<typename B::value_type>;
+    };
+
 template <typename C>
 concept TachyonConfig = requires {
   // Checking if it has a price level hierarchy.
   typename C::PriceLevelHierarchyType;
+  typename C::PriceLevelHierarchyType::value_type;
   requires PriceLevelHierarchy<typename C::PriceLevelHierarchyType>;
 
   // check if it has the various queues we need.
@@ -42,14 +71,33 @@ concept TachyonConfig = requires {
 
   typename C::ExecReportQueue;
   requires ThreadSafeQueue<typename C::ExecReportQueue, ExecutionReport>;
+
+  typename C::ArenaIdxMap;
+  requires Map<typename C::ArenaIdxMap, OrderId, uint32_t>;
+
+  typename C::ListIdxMap;
+  requires Map<
+      typename C::ListIdxMap, OrderId,
+      std::tuple<Side, Price,
+                 std::ranges::iterator_t<
+                     typename C::PriceLevelHierarchyType::value_type>>>;
+
+  typename C::ArenaType;
+  requires Arena<typename C::ArenaType>;
 };
 
 // Our sample config.
 struct my_config {
-  using PriceLevelHierarchyType = std::vector<intrusive_list<ClientRequest>>;
+  using MyPriceLevel = intrusive_list<ClientRequest>;
+  using PriceLevelHierarchyType = std::vector<MyPriceLevel>;
   using EventQueue = threadsafe::stl_queue<ClientRequest>;
   using TradesQueue = threadsafe::stl_queue<Trade>;
   using ExecReportQueue = threadsafe::stl_queue<ExecutionReport>;
+  using ArenaIdxMap = flat_hashmap<OrderId, uint32_t>;
+  using ListIdxMap =
+      flat_hashmap<OrderId, std::tuple<Side, Price, MyPriceLevel::iterator>>;
+
+  using ArenaType = ArenaClass;
 };
 
 // Now we initialise our policies.
@@ -59,7 +107,6 @@ concept Logger = requires(L logger, ClientRequest &incoming,
                           ClientRequest &resting, Quantity trade_quantity) {
   { logger.logNotFound(incoming) };
   { logger.logSelfTrade(incoming) };
-  { logger.logSelfTrade(incoming) }; // User tried self trade
   { logger.logInvalidOrder(incoming) };
   { logger.logNewOrder(incoming) };    // New order logged
   { logger.logCancelOrder(incoming) }; // Cancellation successful.

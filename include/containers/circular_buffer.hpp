@@ -1,7 +1,7 @@
 #ifndef CIRCULAR_BUFFER_HPP
 #define CIRCULAR_BUFFER_HPP
 
-#include <algorithm>  // For std::copy
+#include <algorithm> // For std::copy
 #include <cstddef>
 #include <fstream>
 #include <functional>
@@ -11,15 +11,14 @@
 
 #define INIT_SIZE 100000
 
-template <typename T>
-class circular_buffer {
- private:
-  T* data;
+template <typename T> class circular_buffer {
+private:
+  T *data;
   size_t N{};
   size_t head{};
   size_t tail{};
 
- public:
+public:
   // Default constructor
   explicit circular_buffer(size_t n = INIT_SIZE) : N(n) {
     // Prevent creating a useless 0-sized buffer manually
@@ -33,19 +32,19 @@ class circular_buffer {
   ~circular_buffer() { delete[] data; }
 
   // Deep copy constructor
-  circular_buffer(const circular_buffer& other)
+  circular_buffer(const circular_buffer &other)
       : N(other.N), head(other.head), tail(other.tail) {
     data = new T[N];
     std::copy(other.data, other.data + N, data);
   }
 
   // Deep copy assignment
-  auto operator=(const circular_buffer& other) -> circular_buffer& {
+  auto operator=(const circular_buffer &other) -> circular_buffer & {
     if (this == &other) {
       return *this;
     }
     // Strong exception guarantee
-    T* new_data = new T[other.N];
+    T *new_data = new T[other.N];
     std::copy(other.data, other.data + other.N, new_data);
 
     delete[] data;
@@ -58,12 +57,12 @@ class circular_buffer {
   }
 
   // Move constructor
-  circular_buffer(circular_buffer&& other) noexcept : data(nullptr) {
+  circular_buffer(circular_buffer &&other) noexcept : data(nullptr) {
     *this = std::move(other);
   }
 
   // Move assignment
-  auto operator=(circular_buffer&& other) noexcept -> circular_buffer& {
+  auto operator=(circular_buffer &&other) noexcept -> circular_buffer & {
     if (this == &other) {
       return *this;
     }
@@ -84,7 +83,7 @@ class circular_buffer {
 
   [[nodiscard]] auto full() const -> bool {
     if (N == 0) {
-      return true;  // 0 capacity means always full
+      return true; // 0 capacity means always full
     }
     return (head == (tail + 1) % N);
   }
@@ -96,9 +95,9 @@ class circular_buffer {
     return (N + tail - head) % N;
   }
 
-  void push(T&& element) {
+  void push(T &&element) {
     if (N == 0) {
-      return;  // Safety check for moved-from objects
+      return; // Safety check for moved-from objects
     }
 
     if (full()) {
@@ -108,9 +107,9 @@ class circular_buffer {
     tail = (tail + 1) % N;
   }
 
-  void push(const T& element) {
+  void push(const T &element) {
     if (N == 0) {
-      return;  // Safety check
+      return; // Safety check
     }
 
     if (full()) {
@@ -120,7 +119,14 @@ class circular_buffer {
     tail = (tail + 1) % N;
   }
 
-  void pop(T& element) {
+  void insert(T *start, size_t count) {
+    for (size_t i = 0; i < count; i++) {
+      push(start[i]); // sadly we need to copy data.
+      // Maybe try some memcpy version later.
+    }
+  }
+
+  void pop(T &element) {
     if (empty()) {
       return;
     }
@@ -129,7 +135,7 @@ class circular_buffer {
     head = (head + 1) % N;
   }
 
-  auto operator[](size_t index) -> T& {
+  auto operator[](size_t index) -> T & {
     if (size() == 0 || index >= size()) {
       throw std::out_of_range("Out of bounds access");
     }
@@ -137,15 +143,15 @@ class circular_buffer {
   }
 
   // Const overload for testing
-  auto operator[](size_t index) const -> const T& {
+  auto operator[](size_t index) const -> const T & {
     if (size() == 0 || index >= size()) {
       throw std::out_of_range("Out of bounds access");
     }
     return data[(head + index) % N];
   }
 
-  void dump(const std::string& filename,
-            std::function<void(T&, std::ofstream&)> how,
+  void dump(const std::string &filename,
+            std::function<void(T &, std::ofstream &)> how,
             std::ios::openmode mode = std::ios::app) {
     if (N == 0) {
       return;
@@ -165,4 +171,4 @@ class circular_buffer {
   void clear() { head = tail = 0; }
 };
 
-#endif  // CIRCULAR_BUFFER_HPP
+#endif // CIRCULAR_BUFFER_HPP

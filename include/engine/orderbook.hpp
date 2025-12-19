@@ -14,23 +14,14 @@
 #include "engine/requires.hpp"
 #include "engine/types.hpp"
 
-/*template <template <typename...> typename Heirarchy,
-          template <typename...> typename Level>
-  requires PriceLevelHierarchy<Heirarchy<Level<ClientRequest>>,
-                               Level<ClientRequest>> */
+// TODO: Make the arena also an concept
+// Change intrusive list to accept an index and reference to arena.
+// Update config accordingly.
+
 template <TachyonConfig config> class OrderBook {
 private:
   // TODO: shift to a custom block allocater.
-  struct OrderSlot { // NOTE: make sure ABA problem doesn't occur.
 
-    ClientRequest clr;
-    bool is_active = false;
-  };
-  std::deque<OrderSlot> arena;     // Our active orders live here.
-  std::vector<uint32_t> free_list; // Acts as stack.
-
-  auto allocateSlot(const ClientRequest &incoming) -> uint32_t;
-  void freeSlot(uint32_t idx);
   struct bids_cmp {
     auto operator()(const ClientRequest &order_a,
                     const ClientRequest &order_b) const -> bool {
@@ -52,17 +43,12 @@ private:
               order_b.new_order.price); // Big with higher price comes first.
     }
   };
+  config::ArenaType arena;
+  config::ArenaIdxMap arena_idx;
+  config::ListIdxMap list_idx;
+  config::PriceLevelHierarchyType bids; // people buying stuff
+  config::PriceLevelHierarchyType asks; // people selling stuff
 
-  // std::set<ClientRequest, bids_cmp> bids;  // People buying stuff.
-  // std::set<ClientRequest, asks_cmp> asks;  // People selling stuff.
-  // std::deque<ClientRequest> arena;  // This is where the orders live.
-  flat_hashmap<OrderId, uint32_t> arena_idx;
-  flat_hashmap<OrderId,
-               std::tuple<Side, Price,
-                          intrusive_list<ClientRequest>::ListIterator<false>>>
-      list_idx;
-  config::PriceLevelHierarchyType bids;
-  config::PriceLevelHierarchyType asks;
   template <typename BookType, typename CompareFunc>
   void
   matchImplementation(ClientRequest &incoming, BookType &book,
@@ -119,10 +105,10 @@ private:
         if (book_it->new_order.quantity == 0) {
           // old elements from arena.
           // TODO: erasing from arena has linear complexity. Do something.
-          freeSlot(arena_idx.get(book_it->new_order.order_id));
-          arena_idx.remove(book_it->new_order.order_id);
-          list_idx.remove(book_it->new_order.order_id);
-          book_it = book[book_price].remove(book_it); // remove finished orders.
+          arena.freeSlot(arena_idx.at(book_it->new_order.order_id));
+          arena_idx.erase(book_it->new_order.order_id);
+          list_idx.erase(book_it->new_order.order_id);
+          book_it = book[book_price].erase(book_it); // remove finished orders.
 
         } else {
           book_it++; // Do we really need this?

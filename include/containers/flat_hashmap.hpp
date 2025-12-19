@@ -17,22 +17,20 @@ static constexpr size_t MAX_SIZE = std::numeric_limits<uint32_t>::max();
 static constexpr uint64_t GOLDEN_RATIO = 0x9E3779B97F4A7C15ULL;
 enum class State : uint8_t { FREE, TOMBSTONE, USED };
 
-template <typename K, typename V>
-struct Entry {
+template <typename K, typename V> struct Entry {
   K key{};
   V value{};
   State state;
   Entry() { state = State::FREE; }
 };
 
-template <typename K, typename V>
-class flat_hashmap {
- private:
-  size_t capacity_{};  // size of array data.
+template <typename K, typename V> class flat_hashmap {
+private:
+  size_t capacity_{}; // size of array data.
   size_t size_{};
   size_t tombstones_{};
   size_t mask_;
-  Entry<K, V>* data;
+  Entry<K, V> *data;
 
   auto hashValue(K key) -> size_t {
     if constexpr (std::is_integral_v<K>) {
@@ -56,7 +54,7 @@ class flat_hashmap {
   }
   // auto hashValue(uint64_t key) -> size_t { }
   // Linear probing.
-  auto findFreeIndex(K key, Entry<K, V>* arr) -> size_t {
+  auto findFreeIndex(K key, Entry<K, V> *arr) -> size_t {
     size_t hash = hashValue(key);
     size_t index = hash & mask_;
     for (size_t i = 0; i < capacity_; i++) {
@@ -69,7 +67,7 @@ class flat_hashmap {
       }
       index = (index + 1) & mask_;
     }
-    return NO_SIZE;  // Underflows.
+    return NO_SIZE; // Underflows.
   }
 
   // Function for rehashing and growing.
@@ -84,9 +82,9 @@ class flat_hashmap {
     }
     size_ = 0;
     tombstones_ = 0;
-    auto* tmp = new Entry<K, V>[capacity_];
+    auto *tmp = new Entry<K, V>[capacity_];
     for (size_t i = 0; i < old_N; i++) {
-      if (data[i].state == State::USED) {  // inlined the grow logic.
+      if (data[i].state == State::USED) { // inlined the grow logic.
         size_t index = findFreeIndex(data[i].key, tmp);
         tmp[index].key = data[i].key;
         tmp[index].value = data[i].value;
@@ -98,7 +96,7 @@ class flat_hashmap {
     data = tmp;
     // size remains same.
   }
-  void insert(const K& key, const V& value, Entry<K, V>* arr) {
+  void insert(const K &key, const V &value, Entry<K, V> *arr) {
     if (size_ > 0.8 * capacity_) {
       // std::cout << "Growing due to size_ = " << size_ << "\n";
       grow();
@@ -119,18 +117,18 @@ class flat_hashmap {
     }
     // if overwriting, delete old key.
     if (arr[index].state == State::FREE) {
-      size_++;  // if the state was free we are increasing size.
+      size_++; // if the state was free we are increasing size.
     }
     if (arr[index].state == State::TOMBSTONE) {
-      tombstones_--;  // We no longer have a tombstone.
-      size_++;        // but size increases.
+      tombstones_--; // We no longer have a tombstone.
+      size_++;       // but size increases.
     }
     // Do not increase size if used.
     arr[index].key = key;
     arr[index].value = value;
     arr[index].state = State::USED;
   }
-  auto get(const K& key, Entry<K, V>* arr) -> V& {  // Value can be modified.
+  auto get(const K &key, Entry<K, V> *arr) -> V & { // Value can be modified.
     size_t hash = hashValue(key);
 
     size_t index = hash & mask_;
@@ -147,17 +145,17 @@ class flat_hashmap {
     }
     throw std::out_of_range("Value with given key does not exist.");
   }
-  void remove(const K& key, Entry<K, V>* arr) {
+  void remove(const K &key, Entry<K, V> *arr) {
     size_t hash = hashValue(key);
 
     size_t index = (hash)&mask_;
     for (size_t i = 0; i < capacity_; i++) {
-      if (arr[index].state == State::FREE) {  // Same rational as above.
+      if (arr[index].state == State::FREE) { // Same rational as above.
         throw std::out_of_range(
             "Value with given key does not exist and hence cannot be removed.");
       }
       if ((arr[index].state != State::TOMBSTONE) && (arr[index].key == key)) {
-        arr[index].state = State::TOMBSTONE;  // Can be used later now.
+        arr[index].state = State::TOMBSTONE; // Can be used later now.
         tombstones_++;
         size_--;
         return;
@@ -166,20 +164,23 @@ class flat_hashmap {
     }
   }
 
- public:
+public:
   flat_hashmap(size_t n = DEFAULT_SIZE) {
     capacity_ = next_power_of_two(n);
     this->data = new Entry<K, V>[capacity_];
     mask_ = capacity_ - 1;
   }
   ~flat_hashmap() { delete[] this->data; }
-  void insert(const K& key, const V& value) { insert(key, value, data); }
 
-  auto get(const K& key) -> V& { return get(key, data); }
+  void insert(std::pair<const K &, const V &> pair) {
+    insert(pair.first, pair.second, data);
+  }
 
-  void remove(const K& key) { remove(key, data); }
+  auto at(const K &key) -> V & { return get(key, data); }
 
-  auto contains(const K& key) -> bool {
+  void erase(const K &key) { remove(key, data); }
+
+  auto contains(const K &key) -> bool {
     size_t hash = hashValue(key);
 
     size_t index = (hash)&mask_;
