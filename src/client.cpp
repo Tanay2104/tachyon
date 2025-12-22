@@ -261,7 +261,7 @@ template <TachyonConfig config> void Client<config>::generateOrders() {
       std::cout << "meow didn't recieve id\n";
       // we haven't recieved id yet.
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    // std::this_thread::sleep_for(std::chrono::nanoseconds(10));
     orders_to_place.push(generateOrderHelper());
     if (local_order_id % (ORDER_CANCELLATION_FREQ) == 0) {
       OrderId to_delete = local_order_id - (rand() % (ORDER_CANCELLATION_FREQ));

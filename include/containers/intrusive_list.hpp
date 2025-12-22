@@ -20,6 +20,13 @@
     (type *)((char *)__mptr - offsetof(type, member));                         \
   })
 
+// NOTE:
+// This implementation can be confusing because the roles of next
+// and prev are swapped. node.next_idx points to the PREVIOUS
+// element in list and node.prev_idx points to the NEXT element
+// in the list. Nevertheless, the logic is internally consistent
+// and passes the corresponding unit tests.
+
 #pragma GCC diagnostic pop
 // Concept for checking existance of intr_node
 // TODO: maybe try adding index, arena& as parameters for insert, delete?
@@ -161,8 +168,10 @@ public:
     explicit ListIterator(IntrusiveListNode *n) : node(n) {}
     ListIterator() = default; // default container for storing with STL.
     // allow convert from it to const it.
-    template <bool WasConst, typename = std::enable_if_t<IsConst && !WasConst>>
-    ListIterator(const ListIterator<WasConst> &other) : node(other.node) {}
+    template <bool WasConst>
+    ListIterator(const ListIterator<WasConst> &other)
+      requires(IsConst && !WasConst)
+        : node(other.node) {}
 
     // deference
     auto operator*() const -> reference {

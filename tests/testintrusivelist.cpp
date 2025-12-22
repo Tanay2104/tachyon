@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "containers/intrusive_list.hpp"  // Assuming your file is named this
+#include "containers/intrusive_list.hpp" // Assuming your file is named this
 
 // -----------------------------------------------------------------------------
 // Test Helpers & Data Structures
@@ -19,16 +19,15 @@ struct TestData {
   TestData(int i, std::string n) : id(i), name(n), padding(0.0) {}
 
   // Helper to allow comparison in tests
-  bool operator==(const TestData& other) const {
+  bool operator==(const TestData &other) const {
     return id == other.id && name == other.name;
   }
 };
 
 // A Fixture for clean setups
 class IntrusiveListTest : public ::testing::Test {
- protected:
+protected:
   intrusive_list<TestData> list;
-
   // Pre-allocated nodes (since intrusive lists don't own memory)
   TestData d1{1, "One"};
   TestData d2{2, "Two"};
@@ -81,12 +80,12 @@ TEST_F(IntrusiveListTest, PopBack_LIFO) {
   TestData result{0, ""};
 
   list.pop_back(result);
-  EXPECT_EQ(result.id, 2);  // Should pop d2
+  EXPECT_EQ(result.id, 2); // Should pop d2
   EXPECT_EQ(list.size(), 1);
-  EXPECT_EQ(list.back().id, 1);  // d1 is now back
+  EXPECT_EQ(list.back().id, 1); // d1 is now back
 
   list.pop_back(result);
-  EXPECT_EQ(result.id, 1);  // Should pop d1
+  EXPECT_EQ(result.id, 1); // Should pop d1
   EXPECT_EQ(list.size(), 0);
 }
 
@@ -95,14 +94,14 @@ TEST_F(IntrusiveListTest, PopBack_LIFO) {
 // -----------------------------------------------------------------------------
 
 TEST_F(IntrusiveListTest, PushFront_ReversesOrder) {
-  list.push_front(d1);  // List: [1]
+  list.push_front(d1); // List: [1]
   EXPECT_EQ(list.front().id, 1);
 
-  list.push_front(d2);  // List: [2, 1]
+  list.push_front(d2); // List: [2, 1]
   EXPECT_EQ(list.front().id, 2);
   EXPECT_EQ(list.back().id, 1);
 
-  list.push_front(d3);  // List: [3, 2, 1]
+  list.push_front(d3); // List: [3, 2, 1]
   EXPECT_EQ(list.front().id, 3);
   EXPECT_EQ(list.size(), 3);
 }
@@ -130,9 +129,9 @@ TEST_F(IntrusiveListTest, PopFront_FIFO_WhenCombinedWithPushBack) {
 // -----------------------------------------------------------------------------
 
 TEST_F(IntrusiveListTest, OperatorBrackets_Access) {
-  list.push_back(d1);  // Index 0
-  list.push_back(d2);  // Index 1
-  list.push_back(d3);  // Index 2
+  list.push_back(d1); // Index 0
+  list.push_back(d2); // Index 1
+  list.push_back(d3); // Index 2
 
   EXPECT_EQ(list[0].id, 1);
   EXPECT_EQ(list[1].id, 2);
@@ -258,13 +257,13 @@ TEST_F(IntrusiveListTest, MoveSemantics_SentinelUpdate) {
   }
 }
 TEST_F(IntrusiveListTest, Iterator_RangeBasedFor) {
-  list.push_back(d1);  // id 1
-  list.push_back(d2);  // id 2
-  list.push_back(d3);  // id 3
+  list.push_back(d1); // id 1
+  list.push_back(d2); // id 2
+  list.push_back(d3); // id 3
 
   int sum = 0;
   // This uses begin(), end(), operator++, operator*
-  for (auto& item : list) {
+  for (auto &item : list) {
     sum += item.id;
   }
 
@@ -277,13 +276,13 @@ TEST_F(IntrusiveListTest, Iterator_StdAlgorithm) {
 
   // Test compatibility with std::find_if
   auto it = std::find_if(list.begin(), list.end(),
-                         [](const TestData& item) { return item.id == 2; });
+                         [](const TestData &item) { return item.id == 2; });
 
   ASSERT_NE(it, list.end());
   EXPECT_EQ(it->id, 2);
   EXPECT_EQ(it->name, "Two");
 }
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }

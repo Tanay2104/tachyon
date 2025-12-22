@@ -10,9 +10,10 @@ private:
     bool is_active = false;
   };
 
-  std::deque<OrderSlot> arena;
+  std::vector<OrderSlot> arena;
   std::vector<uint32_t> free_list; // Acts as stack.
 public:
+  ArenaClass() { arena.reserve(10'000'000); }
   uint32_t allocateSlot(const ClientRequest &incoming) {
     uint32_t idx = 0;
     if (!free_list.empty()) {

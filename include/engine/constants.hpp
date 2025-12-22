@@ -3,10 +3,10 @@
 
 #include <cstddef>
 // NOTE: These constants are for simulation and testing purposes only.
-static constexpr size_t MAX_PROCESSED_EVENTS_SIZE = 10000;
-static constexpr size_t MAX_TRADE_BUFFER_SIZE = 100;
-static constexpr size_t MAX_TRADES_QUEUE_SIZE = 10000;
-static constexpr size_t MAX_EXECUTION_REPORTS_SIZE = 10000;
+static constexpr size_t MAX_PROCESSED_EVENTS_SIZE = 100000;
+static constexpr size_t MAX_TRADE_BUFFER_SIZE = 1000;
+static constexpr size_t MAX_TRADES_QUEUE_SIZE = 100000;
+static constexpr size_t MAX_EXECUTION_REPORTS_SIZE = 100000;
 
 static constexpr size_t NUM_DEFAULT_CLIENTS = 4;
 

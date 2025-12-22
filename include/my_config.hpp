@@ -6,8 +6,9 @@
 #include "containers/intrusive_list.hpp"
 #include "containers/lock_queue.hpp"
 #include "containers/threadsafe_hashmap.hpp"
+#include "engine/types.hpp"
 #include "network/tcpserver.hpp"
-
+#include <containers/lockfree_queue.hpp>
 template <typename T> class testbuffer {
 private:
   std::vector<T> buffer;
@@ -32,9 +33,15 @@ public:
 struct my_config {
   using MyPriceLevel = intrusive_list<ClientRequest>;
   using PriceLevelHierarchyType = std::vector<MyPriceLevel>;
-  using EventQueue = threadsafe::stl_queue<ClientRequest>;
-  using TradesQueue = threadsafe::stl_queue<Trade>;
-  using ExecReportQueue = threadsafe::stl_queue<ExecutionReport>;
+  using EventQueue = LockFreeSPSCQueue<ClientRequest>;
+  using TradesQueue = LockFreeSPSCQueue<Trade>;
+  using ExecReportQueue = LockFreeSPSCQueue<ExecutionReport>;
+
+  /*  using EventQueue = threadsafe::stl_queue<ClientRequest>;
+   using TradesQueue = threadsafe::stl_queue<Trade>;
+   using ExecReportQueue = threadsafe::stl_queue<ExecutionReport>;
+   */
+
   using ArenaIdxMap = flat_hashmap<OrderId, uint32_t>;
   using ListIdxMap =
       flat_hashmap<OrderId, std::tuple<Side, Price, MyPriceLevel::iterator>>;

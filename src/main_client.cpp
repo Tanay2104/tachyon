@@ -4,7 +4,7 @@
 #include <thread>
 
 auto main() -> int {
-  int num_clients = 12;
+  int num_clients = 4;
   std::vector<Client<my_config> *> clients;
   std::vector<std::thread> exchange_data;
   std::vector<std::thread> generate_orders;

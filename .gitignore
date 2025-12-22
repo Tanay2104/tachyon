@@ -5,3 +5,7 @@ build/
 logs/
 .cache
 __pycache__/
+tester.sh
+code.txt
+plan.txt
+project_summary.txt

@@ -14,7 +14,7 @@ std::atomic<bool> keep_running(true);
 auto main() -> int {
   // The main entry point of our simulation.
 
-  uint32_t duration = 500000; // Running duration in ms.
+  uint32_t duration = 50000; // Running duration in ms.
   Exchange<my_config> exchange;
   // exchange.addClients(4);
   exchange.init();

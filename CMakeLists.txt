@@ -1,14 +1,14 @@
 # CMakelists for the project
-cmake_minimum_required(VERSION 3.20)
-project (Matching-Engine VERSION 1.0 LANGUAGES CXX)
+cmake_minimum_required(VERSION 4.2)
+project (tachyon VERSION 1.0 LANGUAGES CXX)
 
 # 1. Standard setup
-set (CMAKE_CXX_STANDARD 20)
+set (CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON) # Generates files for clangd
 
 # Strict warnings
-add_compile_options(-Wall -Wextra -Wpedantic -fconcepts-diagnostics-depth=4)
+add_compile_options(-Wall -Wextra -Wpedantic)
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     add_compile_options(-fsanitize=address -g -O0)
     add_link_options(-fsanitize=address)
