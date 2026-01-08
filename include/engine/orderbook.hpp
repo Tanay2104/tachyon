@@ -80,7 +80,6 @@ private:
       while (incoming.new_order.quantity > 0 &&
              book_it != book[book_price].end() &&
              priceCrosses(book_it->new_order.price, incoming.new_order.price)) {
-        // CRITICAL: Book it id state getting corrupted sometimes!
         if (book_it->client_id == incoming.client_id) {
           // TODO: add something for broadcasting errors.
 
@@ -105,6 +104,7 @@ private:
         if (book_it->new_order.quantity == 0) {
           // old elements from arena.
           // TODO: erasing from arena has linear complexity. Do something.
+          // Or does it?
           arena.freeSlot(arena_idx.at(book_it->new_order.order_id));
           arena_idx.erase(book_it->new_order.order_id);
           list_idx.erase(book_it->new_order.order_id);
