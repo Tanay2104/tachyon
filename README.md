@@ -87,7 +87,11 @@ cmake --build build
 ```bash
 ./build/bin/trader_bot
 ```
-
+### Logging
+To events processed, log trades, execution reports as formatted text, make a logs directory. The appropriate text files will be stored here.
+```bash
+mkdir logs
+```
 ### Benchmarks
 
 Micro-benchmarks for individual components (OrderBook, Hashmap, Queues) are built using Google Benchmark.
